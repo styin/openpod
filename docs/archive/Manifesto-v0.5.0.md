@@ -40,9 +40,7 @@ A 1-dimensional chat UI is fatal for observing machine intelligence. Pod separat
 
 ---
 
-## PART 2: THE UNAMBIGUOUS ARCHITECTURE
-
-To eliminate engineering paralysis, the stack is hardcoded. Do not deviate or offer alternatives.
+## PART 2: THE ARCHITECTURE
 
 ### 1. The Demarcation Line
 * **The SDK (`pod-sdk`):** A lightweight adapter library imported into the Agent Gateway. *It does not invoke LLMs.* It exposes a WebTransport server, decrypts the incoming Pod connection, extracts the TOON payload, and hands it directly to the Gateway.
