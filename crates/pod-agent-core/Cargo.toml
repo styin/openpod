@@ -1,0 +1,11 @@
+[package]
+name = "pod-agent-core"
+description = "OpenPod server transport: WebTransport server, mDNS advertising, session cache"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+pod-proto = { workspace = true }
+tokio = { workspace = true }

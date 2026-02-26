@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package pod;
+
+// =============================================================================
+// OpenPod Wire Protocol
+// Defines the message types for the Tri-Channel Multiplexer.
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Channel A — Semantic (QUIC Reliable Stream)
+// High-speed TOON token deltas, UI intents, and file pointers.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Channel B — Telemetry (QUIC Reliable Stream)
+// Live OS state pushed by the Agent Gateway for Sidecar rendering.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Channel C — Control (QUIC Unreliable Datagram)
+// SIGSTOP interrupts and cryptographic action signatures.
+// ---------------------------------------------------------------------------

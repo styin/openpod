@@ -1,0 +1,11 @@
+[package]
+name = "pod-client-core"
+description = "OpenPod client transport: WebTransport client, mDNS discovery, session management"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+pod-proto = { workspace = true }
+tokio = { workspace = true }

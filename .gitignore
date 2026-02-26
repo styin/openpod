@@ -1,0 +1,37 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Flutter / Dart
+app/.dart_tool/
+app/.packages
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+*.iml
+
+# Python bindings
+bindings/python/target/
+bindings/python/*.egg-info/
+bindings/python/dist/
+__pycache__/
+*.pyc
+
+# Node bindings
+bindings/node/target/
+bindings/node/node_modules/
+bindings/node/*.node
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pod runtime
+.pod_cache/

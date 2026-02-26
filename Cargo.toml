@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pod-proto",
+    "crates/pod-client-core",
+    "crates/pod-agent-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/anthropics/openpod"
+
+[workspace.dependencies]
+pod-proto = { path = "crates/pod-proto" }
+pod-client-core = { path = "crates/pod-client-core" }
+pod-agent-core = { path = "crates/pod-agent-core" }
+prost = "0.13"
+prost-types = "0.13"
+tokio = { version = "1", features = ["full"] }
