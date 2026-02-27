@@ -1,6 +1,6 @@
 # OpenPod — Agent Instructions
 
-Read `docs/Manifesto-v0.6.0.md` before making any architectural decisions. It is the single source of truth.
+Read `docs/Manifesto-v0.7.0.md` before making any architectural decisions. It is the single source of truth.
 
 ## Project Overview
 
@@ -15,14 +15,15 @@ openpod/
 │   └── pod_protocol.proto      # Wire protocol (protobuf) — shared by all crates
 ├── crates/
 │   ├── pod-proto/              # Compiled protobuf types, codec, shared primitives
-│   ├── pod-client-core/        # Client transport (WebTransport client, mDNS browser, mTLS)
-│   └── pod-agent-core/         # Agent transport (WebTransport server, mDNS advertiser, mTLS)
+│   ├── pod-client-core/        # Client transport (QUIC client, mDNS browser, mTLS)
+│   └── pod-agent-core/         # Agent transport (QUIC server, mDNS advertiser, mTLS)
 ├── bindings/
 │   ├── python/                 # PyO3 bindings for pod-agent-core → PyPI `pod-sdk`
 │   └── node/                   # NAPI-RS bindings for pod-agent-core → npm `pod-sdk`
 ├── app/                        # Flutter client application (uses pod-client-core via flutter_rust_bridge)
 └── docs/
-    └── Manifesto-v0.6.0.md     # Root architectural directive
+    ├── Manifesto-v0.7.0.md     # Root architectural directive
+    └── archive/                # Previous manifesto versions
 ```
 
 ## Key Architectural Rules
@@ -45,15 +46,15 @@ openpod/
 - Any codec utilities shared between client and agent
 
 ### `pod-client-core`
-- WebTransport client (connection initiation over QUIC)
+- QUIC client (connection initiation)
 - mDNS service browser (discovers `_openpod._udp.local` agents)
 - Client-side mTLS handshake and PodId verification
 - Tri-channel session multiplexing
 - Pairing flow (client side): QR scan, SAS verification, trust store
-- Media upload via background WebTransport streams
+- Media upload via background QUIC streams
 
 ### `pod-agent-core`
-- WebTransport server (accepts incoming Pod connections)
+- QUIC server (accepts incoming Pod connections)
 - mDNS service advertiser (opt-in, broadcasts `_openpod._udp.local`)
 - Server-side mTLS handshake and client verification
 - Tri-channel session multiplexing
@@ -68,7 +69,7 @@ openpod/
 |-------|---------|
 | `prost` / `prost-build` | Protobuf serialization & build-time compilation |
 | `tokio` | Async runtime (full features) |
-| `quinn` or `wtransport` | QUIC / WebTransport |
+| `quinn` | QUIC transport (RFC 9000) |
 | `ed25519-dalek` | Ed25519 identity keypair |
 | `rcgen` | Self-signed X.509 certificate generation |
 | `mdns-sd` | mDNS/DNS-SD discovery and advertising |

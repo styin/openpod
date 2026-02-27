@@ -1,6 +1,6 @@
 [package]
 name = "pod-agent-core"
-description = "OpenPod server transport: WebTransport server, mDNS advertising, session cache"
+description = "OpenPod server transport: QUIC server, mDNS advertising, session cache"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,3 +9,14 @@ repository.workspace = true
 [dependencies]
 pod-proto = { workspace = true }
 tokio = { workspace = true }
+quinn = { workspace = true }
+rustls = { workspace = true }
+tracing = { workspace = true }
+prost = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+rustls-pki-types = { workspace = true }
+
+[dev-dependencies]
+pod-client-core = { workspace = true }
+tracing-subscriber = { workspace = true }

@@ -33,6 +33,24 @@ pub enum ProtoError {
     #[error("SAS derivation failed: {0}")]
     SasDerivation(String),
 
+    // --- TLS / Verification ---
+    #[error("certificate verification failed: {0}")]
+    CertificateVerification(String),
+
+    #[error("TLS configuration error: {0}")]
+    TlsConfiguration(String),
+
+    #[error("handshake failed: {0}")]
+    HandshakeFailed(String),
+
+    // --- I/O ---
+    #[error("stream I/O error: {0}")]
+    StreamIo(String),
+
+    // --- Trust store ---
+    #[error("peer denied by trust store: {0}")]
+    PeerDenied(String),
+
     // --- Serialization ---
     #[error("protobuf encode error: {0}")]
     ProtobufEncode(#[from] prost::EncodeError),

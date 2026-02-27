@@ -7,9 +7,15 @@
 //! - Protocol version constants
 //! - Ed25519 identity and X.509 certificate primitives
 //! - Short Authentication String (SAS) derivation
+//! - Trust store abstraction for TOFU pairing
+//! - TLS configuration (certificate extraction, custom verifiers, config builders)
+//! - Length-delimited protobuf codec
 
+pub mod codec;
 pub mod error;
 pub mod identity;
 pub mod sas;
+pub mod tls;
+pub mod trust;
 pub mod version;
 pub mod wire;

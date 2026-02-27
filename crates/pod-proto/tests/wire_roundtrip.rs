@@ -324,7 +324,7 @@ fn telemetry_update_roundtrip() {
         stderr_delta: String::new(),
         context_tokens_used: 15000,
         context_tokens_total: 200000,
-        timestamp_ms: 1735689600_000,
+        timestamp_ms: 1_735_689_600_000,
         extra_json: extra.to_vec(),
     };
 
@@ -339,7 +339,7 @@ fn telemetry_update_roundtrip() {
     assert!(decoded.stderr_delta.is_empty());
     assert_eq!(decoded.context_tokens_used, 15000);
     assert_eq!(decoded.context_tokens_total, 200000);
-    assert_eq!(decoded.timestamp_ms, 1735689600_000);
+    assert_eq!(decoded.timestamp_ms, 1_735_689_600_000);
     assert_eq!(decoded.extra_json, extra);
 }
 
@@ -374,7 +374,7 @@ fn control_signal_brake_roundtrip() {
     let original = ControlSignal {
         signal_id: "sig-uuid-001".into(),
         signal_type: ControlSignalType::Brake.into(),
-        timestamp_ms: 1735689600_000,
+        timestamp_ms: 1_735_689_600_000,
     };
 
     let bytes = original.encode_to_vec();
@@ -382,7 +382,7 @@ fn control_signal_brake_roundtrip() {
 
     assert_eq!(decoded.signal_id, "sig-uuid-001");
     assert_eq!(decoded.signal_type(), ControlSignalType::Brake);
-    assert_eq!(decoded.timestamp_ms, 1735689600_000);
+    assert_eq!(decoded.timestamp_ms, 1_735_689_600_000);
 }
 
 #[test]
@@ -390,7 +390,7 @@ fn control_signal_interrupt_roundtrip() {
     let original = ControlSignal {
         signal_id: "sig-uuid-002".into(),
         signal_type: ControlSignalType::Interrupt.into(),
-        timestamp_ms: 1735689600_500,
+        timestamp_ms: 1_735_689_600_500,
     };
 
     let bytes = original.encode_to_vec();
@@ -424,7 +424,7 @@ fn same_control_signal_encodes_identically_for_both_paths() {
     let signal = ControlSignal {
         signal_id: "dedup-test-uuid".into(),
         signal_type: ControlSignalType::Brake.into(),
-        timestamp_ms: 1735689600_000,
+        timestamp_ms: 1_735_689_600_000,
     };
 
     let datagram_bytes = signal.encode_to_vec();

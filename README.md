@@ -42,9 +42,10 @@ graph LR
 
     subgraph pod["Pod: Out-of-Band Hardware Brake"]
         direction LR
-        UserB[Human] -->|press Brake| GW[Gateway Process Mgr]
+        UserB[Human] -->|press Brake| GW[Agent Gateway]
         GW -->|killProcessTree| ProcB[Halted Process]
-        UserB -.->|normal chat| LLM_B[LLM]
+        UserB -.->|normal chat| GW
+        GW -.->|routes to| LLM_B[LLM]
         style ProcB fill:#ccffcc,stroke:#00cc00
     end
 ```
