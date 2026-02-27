@@ -1,6 +1,6 @@
 [package]
 name = "pod-proto"
-description = "OpenPod wire protocol: protobuf definitions, codec, mTLS primitives"
+description = "OpenPod wire protocol: protobuf definitions, codec, identity primitives"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,6 +9,15 @@ repository.workspace = true
 [dependencies]
 prost = { workspace = true }
 prost-types = { workspace = true }
+thiserror = { workspace = true }
+ed25519-dalek = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+data-encoding = { workspace = true }
+rcgen = { workspace = true }
+rustls-pki-types = { workspace = true }
+time = { workspace = true }
+rand = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.13"

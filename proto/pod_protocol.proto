@@ -3,22 +3,218 @@ syntax = "proto3";
 package pod;
 
 // =============================================================================
-// OpenPod Wire Protocol
+// OpenPod Wire Protocol v0.1.0
 // Defines the message types for the Tri-Channel Multiplexer.
+// See docs/Manifesto-v0.6.0.md for architectural context.
 // =============================================================================
+
+// ---------------------------------------------------------------------------
+// Session / Handshake (Manifesto §2.9, §2.11)
+// ---------------------------------------------------------------------------
+
+// First message after TLS handshake. Client -> Agent.
+message Handshake {
+  // Protocol version in semver format (e.g., "0.1.0").
+  string protocol_version = 1;
+  // Bitmask of supported feature flags. Reserved for forward compatibility.
+  uint64 feature_flags = 2;
+}
+
+// Agent's response to Handshake. Agent -> Client.
+message HandshakeResponse {
+  // Agent's protocol version.
+  string protocol_version = 1;
+  // Negotiated feature flags (intersection of client and agent).
+  uint64 feature_flags = 2;
+}
+
+// Client requests a new session. Client -> Agent. (§2.11.1)
+message SessionInit {
+  // Client's PodId (base32-encoded with Luhn check digits).
+  string client_pod_id = 1;
+  // If reconnecting, the previous session_id. Empty for new sessions.
+  string resume_session_id = 2;
+  // If reconnecting, the last seq_id acknowledged by the client (§2.11.3).
+  uint64 last_ack_id = 3;
+}
+
+// Agent responds with the assigned session. Agent -> Client. (§2.11.1)
+message SessionAck {
+  // Unique session identifier assigned by the agent.
+  string session_id = 1;
+  // If this is a resumed session, the last seq_id acknowledged by the agent.
+  // The client replays un-ACK'd messages starting after this seq_id.
+  uint64 last_ack_id = 2;
+}
+
+// Either side initiates graceful shutdown. (§2.11.2)
+message SessionClose {
+  // Reason code for the close.
+  SessionCloseReason reason = 1;
+  // Optional human-readable detail for logging.
+  string message = 2;
+}
+
+enum SessionCloseReason {
+  SESSION_CLOSE_REASON_UNSPECIFIED = 0;
+  // Normal termination by user action.
+  SESSION_CLOSE_REASON_USER_INITIATED = 1;
+  // Agent is shutting down.
+  SESSION_CLOSE_REASON_AGENT_SHUTDOWN = 2;
+  // Session idle timeout exceeded.
+  SESSION_CLOSE_REASON_IDLE_TIMEOUT = 3;
+  // Protocol error forced close.
+  SESSION_CLOSE_REASON_PROTOCOL_ERROR = 4;
+}
+
+// Acknowledgment of SessionClose. (§2.11.2)
+message SessionCloseAck {}
+
+// ---------------------------------------------------------------------------
+// Error (Manifesto §2.10)
+//
+// Error code ranges:
+//   1xxx — Transport (connection lost, timeout, stream reset)
+//   2xxx — Auth (cert rejected, pairing failed, PodId denied)
+//   3xxx — Session (session not found, cache full)
+//   4xxx — Protocol (version mismatch, malformed message)
+//   5xxx — Gateway (forwarded from the agent gateway)
+// ---------------------------------------------------------------------------
+
+enum ErrorCategory {
+  ERROR_CATEGORY_UNSPECIFIED = 0;
+  ERROR_CATEGORY_TRANSPORT = 1;
+  ERROR_CATEGORY_AUTH = 2;
+  ERROR_CATEGORY_SESSION = 3;
+  ERROR_CATEGORY_PROTOCOL = 4;
+  ERROR_CATEGORY_GATEWAY = 5;
+}
+
+// Structured error message sent on Channel A.
+message Error {
+  // Numeric error code (1xxx–5xxx, see ranges above).
+  uint32 code = 1;
+  // Error category.
+  ErrorCategory category = 2;
+  // Human-readable description for logging/debugging.
+  string message = 3;
+  // Whether the client should attempt to retry.
+  bool recoverable = 4;
+}
 
 // ---------------------------------------------------------------------------
 // Channel A — Semantic (QUIC Reliable Stream)
 // JSON token deltas, UI intents, file-ready notifications, and permission
-// request/response messages.
+// request/response messages. (Manifesto §2.3, §2.6)
+//
+// All Channel A messages are wrapped in ChannelAEnvelope for application-layer
+// sequencing (§2.11.3). The seq_id/ack_id fields enable message replay after
+// ungraceful disconnection and session resumption.
 // ---------------------------------------------------------------------------
 
+// Envelope for all Channel A messages.
+message ChannelAEnvelope {
+  // Monotonically increasing sequence number for this message.
+  uint64 seq_id = 1;
+  // Last seq_id received and processed from the peer.
+  uint64 ack_id = 2;
+  // The actual payload.
+  oneof payload {
+    SemanticMessage semantic = 3;
+    PermissionRequest permission_request = 4;
+    PermissionResponse permission_response = 5;
+    Error error = 6;
+  }
+}
+
+// A semantic message carrying a JSON payload. (§2.2, §2.6)
+message SemanticMessage {
+  // Opaque payload (JSON by default, future TOON). Encoding-agnostic at the
+  // wire level — the interpretation layer decides JSON vs. TOON. (§2.13)
+  bytes json_payload = 1;
+  // Number of file attachments being uploaded in parallel on dedicated QUIC
+  // streams. The SDK buffers this message until all files complete. (§2.6)
+  // Zero for text-only messages (delivered immediately).
+  uint32 pending_attachments = 2;
+}
+
+// The Agent Gateway requests permission for a destructive action. (§1.4)
+message PermissionRequest {
+  // Unique identifier for this permission request (for correlation).
+  string request_id = 1;
+  // JSON-encoded description of the action requiring approval.
+  bytes description_json = 2;
+}
+
+// The client responds to a permission request. (§1.4)
+message PermissionResponse {
+  // The request_id this responds to.
+  string request_id = 1;
+  // Whether the action is approved.
+  bool approved = 2;
+}
+
 // ---------------------------------------------------------------------------
-// Channel B — Telemetry (QUIC Reliable Stream)
+// Channel B — Telemetry (QUIC Reliable Stream, Agent -> Client)
 // Live OS state pushed by the Agent Gateway for Sidecar rendering.
+// (Manifesto §2.3, Axiom III)
+//
+// Unidirectional: Agent pushes, Client renders. Client requests go on Ch A.
+// First-class fields for high-frequency metrics; extra_json for extensibility.
 // ---------------------------------------------------------------------------
+
+// Live state snapshot pushed by the Agent Gateway.
+message TelemetryUpdate {
+  // Current working directory of the agent process.
+  string cwd = 1;
+  // List of active process descriptions (human-readable).
+  repeated string active_processes = 2;
+  // Recent stdout lines (delta since last update).
+  string stdout_delta = 3;
+  // Recent stderr lines (delta since last update).
+  string stderr_delta = 4;
+  // Context window tokens currently used.
+  uint64 context_tokens_used = 5;
+  // Context window total capacity (tokens).
+  uint64 context_tokens_total = 6;
+  // Unix timestamp (milliseconds) when this snapshot was taken.
+  uint64 timestamp_ms = 7;
+  // Forward-compatible extensibility: additional metrics as JSON.
+  // New telemetry fields can be added here without a proto change.
+  bytes extra_json = 8;
+}
 
 // ---------------------------------------------------------------------------
 // Channel C — Control (Dual-Path: QUIC Unreliable Datagram + Reliable Stream)
-// Interrupt/brake signals. Sent on both paths, deduplicated by signal ID.
+// Interrupt/brake signals. Sent on BOTH paths, deduplicated by signal_id.
+// First arrival triggers the action, the duplicate is discarded.
+// (Manifesto §2.3, Axiom I §1.3)
+//
+// No extensible payload — safety-critical path stays rigid and fast to parse.
 // ---------------------------------------------------------------------------
+
+// Control signal types.
+enum ControlSignalType {
+  CONTROL_SIGNAL_TYPE_UNSPECIFIED = 0;
+  // Emergency stop — kill all agent processes. (§1.3)
+  CONTROL_SIGNAL_TYPE_BRAKE = 1;
+  // Soft interrupt — cancel current task gracefully.
+  CONTROL_SIGNAL_TYPE_INTERRUPT = 2;
+}
+
+// Control signal sent on BOTH datagram and stream for dual-path delivery.
+// Receiver deduplicates by signal_id — first arrival wins.
+message ControlSignal {
+  // UUID for deduplication. Same ID sent on both paths.
+  string signal_id = 1;
+  // The type of control signal.
+  ControlSignalType signal_type = 2;
+  // Unix timestamp (milliseconds) when the signal was issued.
+  uint64 timestamp_ms = 3;
+}
+
+// Acknowledgment that the control signal was received and acted upon.
+message ControlSignalAck {
+  // The signal_id being acknowledged.
+  string signal_id = 1;
+}

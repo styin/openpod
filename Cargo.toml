@@ -19,3 +19,12 @@ pod-agent-core = { path = "crates/pod-agent-core" }
 prost = "0.13"
 prost-types = "0.13"
 tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8"] }
+sha2 = "0.10"
+hmac = "0.12"
+data-encoding = "2"
+rcgen = { version = "0.13", features = ["pem"] }
+rustls-pki-types = "1"
+time = "0.3"
+rand = "0.8"

@@ -75,6 +75,12 @@ openpod/
 | `sha2`, `hmac` | PodId derivation, SAS computation |
 | `tracing` / `tracing-subscriber` | Structured logging |
 
+## Code Provenance
+
+- **Prefer borrowing over writing** for security-sensitive code (cryptography, key management, certificate generation, hashing). Use well-audited MIT/Apache-2.0 libraries. Never hand-roll crypto.
+- **Track all references** in `REFERENCES.md` at the repo root. Update it whenever adding a new security-sensitive dependency or borrowing an algorithm pattern.
+- When evaluating a dependency for security-sensitive use: check license (MIT/Apache-2.0 required), audit history, maintainer reputation, and usage by peer projects (iroh, libp2p, rustls ecosystem).
+
 ## Code Style
 
 - Rust edition 2024. Use standard `rustfmt` and `clippy`.
