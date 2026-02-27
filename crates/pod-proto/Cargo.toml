@@ -1,6 +1,6 @@
 [package]
 name = "pod-proto"
-description = "OpenPod wire protocol: protobuf definitions, TOON codec, mTLS primitives"
+description = "OpenPod wire protocol: protobuf definitions, codec, mTLS primitives"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

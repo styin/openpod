@@ -9,7 +9,8 @@ package pod;
 
 // ---------------------------------------------------------------------------
 // Channel A — Semantic (QUIC Reliable Stream)
-// High-speed TOON token deltas, UI intents, and file pointers.
+// JSON token deltas, UI intents, file-ready notifications, and permission
+// request/response messages.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -18,6 +19,6 @@ package pod;
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Channel C — Control (QUIC Unreliable Datagram)
-// SIGSTOP interrupts and cryptographic action signatures.
+// Channel C — Control (Dual-Path: QUIC Unreliable Datagram + Reliable Stream)
+// Interrupt/brake signals. Sent on both paths, deduplicated by signal ID.
 // ---------------------------------------------------------------------------

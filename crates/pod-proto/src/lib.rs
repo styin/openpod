@@ -3,7 +3,8 @@
 //! Shared protocol layer used by both `pod-client-core` and `pod-agent-core`:
 //!
 //! - Compiled protobuf message types (Channel A, B, C)
-//! - TOON (Token-Oriented Object Notation) codec
+//! - Shared error types and error code constants
+//! - Protocol version constants
 //! - mTLS certificate and identity primitives
 //! - Tri-channel framing types
 
