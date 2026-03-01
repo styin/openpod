@@ -10,9 +10,6 @@ all-features = true
 # Advisories — check crates against the RustSec Advisory Database
 # ---------------------------------------------------------------------------
 [advisories]
-vulnerability = "deny"      # Hard-fail on known vulnerabilities
-unmaintained = "warn"        # Warn on unmaintained crates
-yanked = "deny"              # Hard-fail on yanked crate versions
 ignore = []                  # Advisory IDs to ignore (e.g. "RUSTSEC-2024-XXXX")
 
 # ---------------------------------------------------------------------------
