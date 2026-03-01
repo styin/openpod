@@ -38,7 +38,7 @@ impl PodConnection {
     /// Export TLS keying material for SAS derivation.
     ///
     /// Returns 32 bytes derived from the TLS session using the
-    /// `OPENPOD-PAIRING` label (RFC 5705).
+    /// `OPENPOD-SAS` label (RFC 8446 §7.5, RFC 9266).
     pub fn export_keying_material(&self) -> Result<Vec<u8>> {
         let mut output = vec![0u8; 32];
         self.inner

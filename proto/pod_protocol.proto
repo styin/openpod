@@ -5,7 +5,7 @@ package pod;
 // =============================================================================
 // OpenPod Wire Protocol v0.1.0
 // Defines the message types for the Tri-Channel Multiplexer.
-// See docs/Manifesto-v0.6.0.md for architectural context.
+// See docs/Manifesto-v0.7.1.md for architectural context.
 // =============================================================================
 
 // ---------------------------------------------------------------------------

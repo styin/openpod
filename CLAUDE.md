@@ -1,6 +1,6 @@
 # OpenPod — Agent Instructions
 
-Read `docs/Manifesto-v0.7.0.md` before making any architectural decisions. It is the single source of truth.
+Read `docs/Manifesto-v0.7.1.md` before making any architectural decisions. It is the single source of truth.
 
 ## Project Overview
 
@@ -22,7 +22,7 @@ openpod/
 │   └── node/                   # NAPI-RS bindings for pod-agent-core → npm `pod-sdk`
 ├── app/                        # Flutter client application (uses pod-client-core via flutter_rust_bridge)
 └── docs/
-    ├── Manifesto-v0.7.0.md     # Root architectural directive
+    ├── Manifesto-v0.7.1.md     # Root architectural directive
     └── archive/                # Previous manifesto versions
 ```
 

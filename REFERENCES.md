@@ -10,7 +10,7 @@ This file tracks all external open-source code, libraries, and algorithm referen
 | Ed25519 keypair | `ed25519-dalek` | MIT/Apache-2.0 | [dalek-cryptography/curve25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek) | `SigningKey::generate()`, PKCS#8 export for X.509 cert generation |
 | X.509 cert generation | `rcgen` | MIT/Apache-2.0 | [rustls/rcgen](https://github.com/rustls/rcgen) | `CertificateParams::self_signed()` with `PKCS_ED25519` algorithm |
 | SHA-256 (PodId derivation) | `sha2` | MIT/Apache-2.0 | [RustCrypto/hashes](https://github.com/RustCrypto/hashes) | `Sha256::digest()` for PodId = SHA-256(public key) |
-| HMAC-SHA256 (SAS derivation) | `hmac` + `sha2` | MIT/Apache-2.0 | [RustCrypto/MACs](https://github.com/RustCrypto/MACs) | SAS = truncate(HMAC-SHA256(TLS exporter, randoms)) |
+| HMAC-SHA256 (SAS derivation) | `hmac` + `sha2` | MIT/Apache-2.0 | [RustCrypto/MACs](https://github.com/RustCrypto/MACs) | SAS = truncate(TLS-Exporter); HMAC for OOB nonce mixing |
 | Base32 encoding (PodId display) | `data-encoding` | MIT/Apache-2.0 | [docs.rs/data-encoding](https://docs.rs/data-encoding/) | `BASE32_NOPAD` for PodId human-readable format |
 | QUIC transport | `quinn` 0.11 | MIT/Apache-2.0 | [quinn-rs/quinn](https://github.com/quinn-rs/quinn) | Server/client QUIC endpoints, mTLS, stream I/O, `export_keying_material()` for SAS |
 | TLS configuration | `rustls` 0.23 | MIT/Apache-2.0 | [rustls/rustls](https://github.com/rustls/rustls) | Custom `ServerCertVerifier`/`ClientCertVerifier` for TOFU trust model |
@@ -23,6 +23,9 @@ This file tracks all external open-source code, libraries, and algorithm referen
 |-----------|-----------|---------|-------|
 | Luhn mod-32 check digits | [Syncthing device ID docs](https://docs.syncthing.net/dev/device-ids.html) | MPL-2.0 (Go) | Algorithm pattern only — no code copied. Rust implementation written from the public algorithm description. |
 | TOFU + SAS pairing model | [Syncthing device discovery](https://docs.syncthing.net/), [iroh endpoint auth](https://github.com/n0-computer/iroh) | Various | Informed the pairing ceremony design (§2.7.3). |
+| TLS 1.3 Exporter for SAS | [RFC 8446 §7.5](https://www.rfc-editor.org/rfc/rfc8446#section-7.5) | IETF | Exporter output incorporates full handshake transcript (client_random, server_random, DH exchange). Used directly for SAS derivation — no additional handshake parameter mixing needed. |
+| TLS 1.3 Channel Binding | [RFC 9266](https://www.rfc-editor.org/rfc/rfc9266.html) | IETF | IETF standard for deriving channel-binding values from TLS 1.3 sessions. Uses `TLS-Exporter(fixed_label, "", 32)` with no additional mixing — validates our simplified SAS formula. |
+| SAS derivation patterns | [RFC 6189 (ZRTP)](https://www.rfc-editor.org/rfc/rfc6189), [Matrix SAS spec](https://spec.matrix.org/v1.12/client-server-api/#short-authentication-string-sas-verification) | Various | ZRTP and Matrix both derive SAS from an already-computed session key with fixed context. Bluetooth Numeric Comparison is the exception (uses raw params because shared secret doesn't exist at comparison time). |
 
 ## Design Pattern References
 
