@@ -16,7 +16,6 @@ ignore = []                  # Advisory IDs to ignore (e.g. "RUSTSEC-2024-XXXX")
 # Licenses — enforce an allow-list of acceptable OSS licenses
 # ---------------------------------------------------------------------------
 [licenses]
-unlicensed = "deny"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -28,7 +27,6 @@ allow = [
     "OpenSSL",
     "Zlib",
 ]
-copyleft = "deny"            # Deny copyleft licenses (GPL, AGPL, etc.)
 confidence-threshold = 0.8
 
 [[licenses.clarify]]
