@@ -88,20 +88,18 @@ fn certificate_rotation_preserves_pod_id() {
 }
 
 // ---------------------------------------------------------------------------
-// PodId display ↔ parse roundtrip from live keypair
+// PodId display format from live keypair
 // ---------------------------------------------------------------------------
 
 #[test]
-fn pod_id_display_parse_roundtrip_from_keypair() {
+fn pod_id_display_format_from_keypair() {
     let keypair = Keypair::generate();
     let pod_id = PodId::from_public_key(&keypair.public_key_bytes());
     let display = pod_id.to_display();
 
-    // Parse from display string.
-    let parsed = PodId::from_display(&display).expect("should parse own display output");
-
-    // Display output must match.
-    assert_eq!(parsed.to_display(), display);
+    // Display format: XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX (31 chars with dashes).
+    assert_eq!(display.len(), 31);
+    assert_eq!(display.split('-').count(), 4);
 
     // The short_id must be the first group.
     let first_group = display.split('-').next().unwrap();

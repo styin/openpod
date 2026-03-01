@@ -13,6 +13,7 @@ use std::sync::Arc;
 use pod_agent_core::AgentEndpoint;
 use pod_client_core::ClientEndpoint;
 use pod_proto::identity::{Certificate, Keypair, PodId};
+use pod_proto::sas;
 use pod_proto::trust::{MemoryTrustStore, TrustPolicy, TrustStore};
 
 /// Reference epoch: 2025-01-01 00:00:00 UTC.
@@ -36,14 +37,17 @@ fn make_identity(label: &str) -> (Keypair, Certificate, PodId) {
     eprintln!("\n-- {label}: generating Ed25519 keypair...");
     let kp = Keypair::generate();
     let pub_hex = hex(&kp.public_key_bytes());
+    eprintln!("   private key: [held in memory, never logged]");
     eprintln!("   public key : {pub_hex}");
 
     eprintln!("-- {label}: generating self-signed X.509 certificate (30-day validity)...");
+    eprintln!("   cert embeds the public key above -- binds identity to this certificate");
     let cert = Certificate::generate(&kp, JAN_1_2025).expect("cert gen");
     eprintln!("   cert DER   : {} bytes", cert.der().len());
 
     let pod_id = PodId::from_public_key(&kp.public_key_bytes());
     eprintln!("   PodId      : {pod_id}");
+    eprintln!("   PodId      = SHA-256(public key), full 32 bytes used for trust matching");
     eprintln!("   short_id   : {}", pod_id.short_id());
 
     (kp, cert, pod_id)
@@ -67,8 +71,14 @@ async fn client_connects_to_agent_and_handshake_succeeds() {
     let agent_store = Arc::new(MemoryTrustStore::new());
     let client_store = Arc::new(MemoryTrustStore::new());
     eprintln!("\n-- Trust stores: empty (pairing mode -- TOFU)");
-    eprintln!("   agent_store.is_trusted(client)  = {}", agent_store.is_trusted(&client_pod_id));
-    eprintln!("   client_store.is_trusted(agent)  = {}", client_store.is_trusted(&agent_pod_id));
+    eprintln!(
+        "   agent_store.is_trusted(client)  = {}",
+        agent_store.is_trusted(&client_pod_id)
+    );
+    eprintln!(
+        "   client_store.is_trusted(agent)  = {}",
+        client_store.is_trusted(&agent_pod_id)
+    );
 
     // Agent binds to localhost:0 (OS assigns a free port).
     eprintln!("\n-- AGENT: binding QUIC endpoint on 127.0.0.1:0 (TrustPolicy::PairingMode)...");
@@ -96,15 +106,21 @@ async fn client_connects_to_agent_and_handshake_succeeds() {
 
     // Run both sides concurrently.
     eprintln!("\n-- Running agent.accept() || client.connect({agent_addr})...");
+    eprintln!("   mTLS handshake (both sides simultaneously):");
+    eprintln!("   1. TLS ClientHello/ServerHello exchange");
+    eprintln!("   2. Each side sends its X.509 certificate (contains public key)");
+    eprintln!("   3. Each side signs a TLS challenge with its PRIVATE key");
+    eprintln!("   4. Each side verifies the peer's signature using the cert's public key");
+    eprintln!("   5. Verifier extracts pubkey from cert -> SHA-256 -> PodId -> trust store lookup");
     let (agent_result, client_result) =
         tokio::join!(agent.accept(), client_endpoint.connect(agent_addr));
 
     let agent_conn = agent_result.expect("agent should accept");
     let client_conn = client_result.expect("client should connect");
-    eprintln!("   [ok] Both sides connected successfully");
+    eprintln!("   [ok] mTLS handshake succeeded -- both sides proved private key possession");
 
     // Verify peer PodIds match expectations.
-    eprintln!("\n-- Verifying peer PodIds...");
+    eprintln!("\n-- Verifying peer PodIds (full 32-byte SHA-256 comparison)...");
     eprintln!("   agent sees peer  : {}", agent_conn.peer_pod_id());
     eprintln!("   expected (client): {client_pod_id}");
     assert_eq!(
@@ -119,12 +135,19 @@ async fn client_connects_to_agent_and_handshake_succeeds() {
         agent_pod_id.as_bytes(),
         "client should see agent's PodId"
     );
-    eprintln!("   [ok] Peer PodIds match");
+    eprintln!("   [ok] Peer PodIds match (full 32-byte hash, not truncated display)");
 
     // Verify trust stores were populated (pairing mode auto-trusts).
     eprintln!("\n-- Checking trust stores after TOFU...");
-    eprintln!("   agent_store.is_trusted(client)  = {}", agent_store.is_trusted(&client_pod_id));
-    eprintln!("   client_store.is_trusted(agent)  = {}", client_store.is_trusted(&agent_pod_id));
+    eprintln!("   Trust store keys on full 32-byte PodId (SHA-256 of public key)");
+    eprintln!(
+        "   agent_store.is_trusted(client)  = {}",
+        agent_store.is_trusted(&client_pod_id)
+    );
+    eprintln!(
+        "   client_store.is_trusted(agent)  = {}",
+        client_store.is_trusted(&agent_pod_id)
+    );
     assert!(agent_store.is_trusted(&client_pod_id));
     assert!(client_store.is_trusted(&agent_pod_id));
     eprintln!("   [ok] Both peers auto-trusted via TOFU");
@@ -153,7 +176,10 @@ async fn denied_pod_id_rejected_at_tls() {
     let agent_store = Arc::new(MemoryTrustStore::new());
     eprintln!("\n-- AGENT: denying client PodId {client_pod_id} before connection...");
     agent_store.deny(client_pod_id.clone());
-    eprintln!("   agent_store.is_denied(client) = {}", agent_store.is_denied(&client_pod_id));
+    eprintln!(
+        "   agent_store.is_denied(client) = {}",
+        agent_store.is_denied(&client_pod_id)
+    );
 
     let client_store = Arc::new(MemoryTrustStore::new());
 
@@ -181,12 +207,25 @@ async fn denied_pod_id_rejected_at_tls() {
 
     // Run both sides -- one or both should fail.
     eprintln!("-- Running agent.accept() || client.connect({agent_addr})...");
+    eprintln!("   mTLS handshake will proceed, but during step 5:");
+    eprintln!("   Verifier extracts pubkey from client cert -> SHA-256 -> PodId");
+    eprintln!("   -> trust store lookup -> FOUND IN DENY LIST -> handshake aborted");
     let (agent_result, client_result) =
         tokio::join!(agent.accept(), client_endpoint.connect(agent_addr));
 
     eprintln!("\n-- Results:");
-    eprintln!("   agent  : {}", if agent_result.is_ok() { "ok" } else { "FAILED" });
-    eprintln!("   client : {}", if client_result.is_ok() { "ok" } else { "FAILED" });
+    eprintln!(
+        "   agent  : {}",
+        if agent_result.is_ok() { "ok" } else { "FAILED" }
+    );
+    eprintln!(
+        "   client : {}",
+        if client_result.is_ok() {
+            "ok"
+        } else {
+            "FAILED"
+        }
+    );
     if let Err(ref e) = agent_result {
         eprintln!("   agent error  : {e}");
     }
@@ -200,7 +239,7 @@ async fn denied_pod_id_rejected_at_tls() {
         either_failed,
         "denied PodId should cause connection failure"
     );
-    eprintln!("   [ok] Connection correctly rejected (denied PodId)");
+    eprintln!("   [ok] Connection correctly rejected -- private key was valid but PodId is denied");
 
     agent.close();
     client_endpoint.close();
@@ -252,12 +291,25 @@ async fn strict_mode_rejects_unknown_peer() {
     .expect("client endpoint should create");
 
     eprintln!("-- Running agent.accept() || client.connect({agent_addr})...");
+    eprintln!("   mTLS handshake will proceed, but during step 5:");
+    eprintln!("   Verifier extracts pubkey from client cert -> SHA-256 -> PodId");
+    eprintln!("   -> trust store lookup -> NOT IN TRUSTED SET -> handshake aborted");
     let (agent_result, client_result) =
         tokio::join!(agent.accept(), client_endpoint.connect(agent_addr));
 
     eprintln!("\n-- Results:");
-    eprintln!("   agent  : {}", if agent_result.is_ok() { "ok" } else { "FAILED" });
-    eprintln!("   client : {}", if client_result.is_ok() { "ok" } else { "FAILED" });
+    eprintln!(
+        "   agent  : {}",
+        if agent_result.is_ok() { "ok" } else { "FAILED" }
+    );
+    eprintln!(
+        "   client : {}",
+        if client_result.is_ok() {
+            "ok"
+        } else {
+            "FAILED"
+        }
+    );
     if let Err(ref e) = agent_result {
         eprintln!("   agent error  : {e}");
     }
@@ -267,7 +319,7 @@ async fn strict_mode_rejects_unknown_peer() {
 
     let either_failed = agent_result.is_err() || client_result.is_err();
     assert!(either_failed, "strict mode should reject unknown peer");
-    eprintln!("   [ok] Connection correctly rejected (strict mode, unknown peer)");
+    eprintln!("   [ok] Connection correctly rejected -- valid keypair but not pre-trusted");
 
     agent.close();
     client_endpoint.close();
@@ -322,7 +374,10 @@ async fn both_sides_derive_same_tls_exporter_key() {
     eprintln!("   [ok] Both sides connected");
 
     // Both sides export keying material -- must match.
-    eprintln!("\n-- Exporting TLS keying material (label: OPENPOD-PAIRING, 32 bytes)...");
+    eprintln!("\n-- Exporting TLS keying material (label: OPENPOD-SAS, 32 bytes)...");
+    eprintln!("   TLS exporter keys are derived from the shared session secret");
+    eprintln!("   A MITM attacker would have different session keys on each leg,");
+    eprintln!("   so the exported material would differ -- SAS comparison catches this");
     let agent_key = agent_conn
         .export_keying_material()
         .expect("agent keying material");
@@ -338,10 +393,41 @@ async fn both_sides_derive_same_tls_exporter_key() {
         agent_key, client_key,
         "both sides must derive the same TLS exporter key"
     );
-    eprintln!("   [ok] Keys match");
+    eprintln!("   [ok] Keys match -- no MITM (same TLS session)");
 
     assert_eq!(agent_key.len(), 32);
     eprintln!("   [ok] Key length is 32 bytes");
+
+    // Derive SAS from the exporter key -- the full end-to-end pairing flow.
+    eprintln!("\n-- Deriving 6-digit SAS from exporter key (manual path)...");
+    eprintln!("   SAS = truncate_20bits(exporter_key) per Manifesto §2.7.3");
+    let agent_sas = sas::derive_sas(&agent_key).expect("agent SAS derivation");
+    let client_sas = sas::derive_sas(&client_key).expect("client SAS derivation");
+
+    eprintln!("   agent  SAS: {agent_sas}");
+    eprintln!("   client SAS: {client_sas}");
+
+    assert_eq!(
+        agent_sas, client_sas,
+        "both sides must derive the same 6-digit SAS"
+    );
+    assert_eq!(agent_sas.len(), 6);
+    assert!(agent_sas.chars().all(|c| c.is_ascii_digit()));
+    eprintln!("   [ok] SAS codes match -- pairing verification would succeed");
+
+    // Also test the OOB/QR path with a simulated nonce.
+    eprintln!("\n-- Deriving SAS with OOB nonce (QR path)...");
+    eprintln!("   SAS_oob = truncate_20bits(HMAC-SHA256(exporter_key, oob_nonce))");
+    let oob_nonce = b"simulated-qr-nonce-32-bytes-ok!";
+    let agent_oob_sas = sas::derive_sas_with_oob(&agent_key, oob_nonce).expect("agent OOB SAS");
+    let client_oob_sas = sas::derive_sas_with_oob(&client_key, oob_nonce).expect("client OOB SAS");
+
+    eprintln!("   agent  SAS (OOB): {agent_oob_sas}");
+    eprintln!("   client SAS (OOB): {client_oob_sas}");
+
+    assert_eq!(agent_oob_sas, client_oob_sas, "OOB SAS must match");
+    assert_ne!(agent_sas, agent_oob_sas, "OOB nonce must change the SAS");
+    eprintln!("   [ok] OOB SAS codes match and differ from manual SAS");
 
     agent.close();
     client_endpoint.close();
