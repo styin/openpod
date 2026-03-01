@@ -1,0 +1,66 @@
+# cargo-deny configuration for OpenPod
+# https://embarkstudios.github.io/cargo-deny/
+#
+# Run locally: cargo deny check
+
+[graph]
+all-features = true
+
+# ---------------------------------------------------------------------------
+# Advisories — check crates against the RustSec Advisory Database
+# ---------------------------------------------------------------------------
+[advisories]
+vulnerability = "deny"      # Hard-fail on known vulnerabilities
+unmaintained = "warn"        # Warn on unmaintained crates
+yanked = "deny"              # Hard-fail on yanked crate versions
+ignore = []                  # Advisory IDs to ignore (e.g. "RUSTSEC-2024-XXXX")
+
+# ---------------------------------------------------------------------------
+# Licenses — enforce an allow-list of acceptable OSS licenses
+# ---------------------------------------------------------------------------
+[licenses]
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "OpenSSL",
+    "Zlib",
+]
+copyleft = "deny"            # Deny copyleft licenses (GPL, AGPL, etc.)
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+# ---------------------------------------------------------------------------
+# Bans — forbid specific crates
+# ---------------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"   # Warn when the same crate appears at >1 version
+wildcards = "deny"           # Deny wildcard ("*") dependency versions
+highlight = "all"
+
+deny = [
+    # We use quinn directly; libp2p adds unnecessary abstraction layers.
+    # See Manifesto v0.7.0: "libp2p evaluated and rejected".
+    { crate = "libp2p" },
+
+    # We use quinn (raw QUIC); wtransport is not yet production-ready.
+    { crate = "wtransport" },
+]
+
+# ---------------------------------------------------------------------------
+# Sources — only allow crates from crates.io
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
