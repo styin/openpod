@@ -24,7 +24,7 @@ OpenPod fixes this by ruthlessly optimizing for three core objectives. We don't 
 
 ## 1. Security: The Sovereign Lock
 
-Agents run on your machine and have access to your files. Security cannot rely on natural language ("Stop") or centralized cloud routers. Pod operates exclusively Peer-to-Peer with native End-to-End Encryption (mTLS over WebTransport).
+Agents run on your machine and have access to your files. Security cannot rely on natural language ("Stop") or centralized cloud routers. Pod operates exclusively Peer-to-Peer with native End-to-End Encryption (mTLS over QUIC).
 
 ### Passthrough Control: OOB Brake vs Natural Language
 
@@ -97,7 +97,7 @@ sequenceDiagram
     end
 
     rect rgb(230, 255, 230)
-    Note over User, Agent: OpenPod - WebTransport Tri-Channel Multiplexing
+    Note over User, Agent: OpenPod - QUIC Tri-Channel Multiplexing
     User->>App: Send message + 500MB File
     par Semantic Channel (Stream A)
         App->>Agent: Instantly: Analyze this file (Protobuf)
@@ -160,8 +160,8 @@ openpod/
 ├── proto/                      # Wire protocol (protobuf) definitions
 ├── crates/
 │   ├── pod-proto/              # Compiled protobuf types and codecs
-│   ├── pod-client-core/        # Client headless core (Rust: WebTransport, mDNS, mTLS)
-│   └── pod-agent-core/         # Agent daemon core (Rust: WebTransport, mDNS, mTLS)
+│   ├── pod-client-core/        # Client headless core (Rust: QUIC, mDNS, mTLS)
+│   └── pod-agent-core/         # Agent daemon core (Rust: QUIC, mDNS, mTLS)
 ├── bindings/
 │   ├── python/                 # PyO3 bindings -> `pip install pod-sdk`
 │   └── node/                   # NAPI-RS bindings -> `npm install pod-sdk`
@@ -171,10 +171,10 @@ openpod/
 
 ### The Architecture Stack
 
-- **The Client Engine (`libpod_client_core`):** Written purely in Rust. Headless core handling 100% of WebTransport networking, mDNS discovery, and mTLS cryptography.
+- **The Client Engine (`libpod_client_core`):** Written purely in Rust. Headless core handling 100% of QUIC networking, mDNS discovery, and mTLS cryptography.
 - **The Client UI (`app`):** Written in Flutter (Dart). Binds to the Rust core via `flutter_rust_bridge`. Provides high-fps rendering and native OS hooks without the overhead of WebViews.
 - **The SDK (`pod-sdk`):** A lightweight adapter library imported by Agent Gateways (Python/Node). Decrypts the incoming Pod connection, extracts the semantic JSON payload, and feeds events to the Gateway via callbacks.
 
 ---
 
-_Read `docs/Manifesto-v0.6.0.md` for the full U2A specification and architectural directive._
+_Read `docs/Manifesto-v0.7.1.md` for the full U2A specification and architectural directive._

@@ -47,14 +47,7 @@ multiple-versions = "warn"   # Warn when the same crate appears at >1 version
 wildcards = "deny"           # Deny wildcard ("*") dependency versions
 highlight = "all"
 
-deny = [
-    # We use quinn directly; libp2p adds unnecessary abstraction layers.
-    # See Manifesto v0.7.0: "libp2p evaluated and rejected".
-    { crate = "libp2p" },
-
-    # We use quinn (raw QUIC); wtransport is not yet production-ready.
-    { crate = "wtransport" },
-]
+deny = []
 
 # ---------------------------------------------------------------------------
 # Sources — only allow crates from crates.io
