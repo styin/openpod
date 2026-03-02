@@ -41,10 +41,11 @@ pub const SAS_EXPORTER_LABEL: &str = "OPENPOD-SAS";
 /// # Returns
 /// A 6-digit zero-padded decimal string (e.g., `"847291"`).
 pub fn derive_sas(tls_exporter_key: &[u8]) -> Result<String> {
-    if tls_exporter_key.is_empty() {
-        return Err(ProtoError::SasDerivation(
-            "exporter key must not be empty".into(),
-        ));
+    if tls_exporter_key.len() != 32 {
+        return Err(ProtoError::SasDerivation(format!(
+            "exporter key must be exactly 32 bytes, got {}",
+            tls_exporter_key.len()
+        )));
     }
     Ok(truncate_to_6_digits(tls_exporter_key))
 }
@@ -116,6 +117,12 @@ mod tests {
     #[test]
     fn empty_exporter_key_fails() {
         let result = derive_sas(b"");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn short_exporter_key_fails() {
+        let result = derive_sas(b"too-short");
         assert!(result.is_err());
     }
 }

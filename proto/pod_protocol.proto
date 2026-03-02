@@ -30,8 +30,10 @@ message HandshakeResponse {
 
 // Client requests a new session. Client -> Agent. (§2.11.1)
 message SessionInit {
-  // Client's PodId (base32-encoded with Luhn check digits).
-  string client_pod_id = 1;
+  // Client's full PodId (32-byte SHA-256 of public key).
+  // The authoritative source is the TLS-derived PodId; this field
+  // allows the agent to identify the session before cert processing.
+  bytes client_pod_id = 1;
   // If reconnecting, the previous session_id. Empty for new sessions.
   string resume_session_id = 2;
   // If reconnecting, the last seq_id acknowledged by the client (§2.11.3).

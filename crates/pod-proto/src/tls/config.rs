@@ -46,7 +46,7 @@ pub fn build_server_tls_config(
     .map_err(|e| ProtoError::TlsConfiguration(format!("server cert config: {e}")))?;
 
     // QUIC requires ALPN — use our protocol identifier.
-    config.alpn_protocols = vec![b"openpod".to_vec()];
+    config.alpn_protocols = vec![ALPN_OPENPOD.to_vec()];
 
     Ok(config)
 }
@@ -78,7 +78,7 @@ pub fn build_client_tls_config(
     .map_err(|e| ProtoError::TlsConfiguration(format!("client cert config: {e}")))?;
 
     // QUIC requires ALPN — use our protocol identifier.
-    config.alpn_protocols = vec![b"openpod".to_vec()];
+    config.alpn_protocols = vec![ALPN_OPENPOD.to_vec()];
 
     Ok(config)
 }
@@ -127,7 +127,7 @@ mod tests {
         let (kp, cert) = make_keypair_and_cert();
         let store = Arc::new(MemoryTrustStore::new());
         let config = build_server_tls_config(&kp, &cert, store, TrustPolicy::PairingMode).unwrap();
-        assert_eq!(config.alpn_protocols, vec![b"openpod".to_vec()]);
+        assert_eq!(config.alpn_protocols, vec![ALPN_OPENPOD.to_vec()]);
     }
 
     #[test]
@@ -135,6 +135,6 @@ mod tests {
         let (kp, cert) = make_keypair_and_cert();
         let store = Arc::new(MemoryTrustStore::new());
         let config = build_client_tls_config(&kp, &cert, store, TrustPolicy::PairingMode).unwrap();
-        assert_eq!(config.alpn_protocols, vec![b"openpod".to_vec()]);
+        assert_eq!(config.alpn_protocols, vec![ALPN_OPENPOD.to_vec()]);
     }
 }

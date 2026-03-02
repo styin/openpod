@@ -37,9 +37,12 @@ pub fn decode_length_delimited<M: Message + Default>(buf: &[u8]) -> Result<Optio
     let mut cursor = buf;
 
     // Try to read the varint length prefix.
+    // A protobuf varint is at most 10 bytes. If we have 10+ bytes and still
+    // get a decode error, the varint is malformed (not just incomplete).
     let payload_len = match prost::decode_length_delimiter(&mut cursor) {
         Ok(len) => len,
-        Err(_) => return Ok(None), // Not enough bytes for the varint itself.
+        Err(_) if buf.len() < 10 => return Ok(None), // Could be incomplete varint.
+        Err(e) => return Err(ProtoError::ProtobufDecode(e)), // Malformed varint.
     };
 
     if payload_len > MAX_MESSAGE_SIZE {

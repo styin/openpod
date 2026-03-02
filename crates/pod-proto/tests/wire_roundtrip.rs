@@ -42,8 +42,9 @@ fn handshake_response_roundtrip() {
 
 #[test]
 fn session_init_roundtrip() {
+    let pod_id_hash: Vec<u8> = vec![0xAB; 32]; // 32-byte SHA-256 PodId
     let original = SessionInit {
-        client_pod_id: "ABCDEFG-HIJKLMN-OPQRSTU-VWXYZ23".into(),
+        client_pod_id: pod_id_hash.clone(),
         resume_session_id: "sess-abc-123".into(),
         last_ack_id: 42,
     };
@@ -51,7 +52,7 @@ fn session_init_roundtrip() {
     let bytes = original.encode_to_vec();
     let decoded = SessionInit::decode(bytes.as_slice()).expect("decode should succeed");
 
-    assert_eq!(decoded.client_pod_id, "ABCDEFG-HIJKLMN-OPQRSTU-VWXYZ23");
+    assert_eq!(decoded.client_pod_id, pod_id_hash);
     assert_eq!(decoded.resume_session_id, "sess-abc-123");
     assert_eq!(decoded.last_ack_id, 42);
 }
@@ -59,7 +60,7 @@ fn session_init_roundtrip() {
 #[test]
 fn session_init_new_session_has_empty_resume() {
     let original = SessionInit {
-        client_pod_id: "ABCDEFG-HIJKLMN-OPQRSTU-VWXYZ23".into(),
+        client_pod_id: vec![0xCD; 32],
         resume_session_id: String::new(),
         last_ack_id: 0,
     };
