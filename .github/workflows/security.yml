@@ -1,0 +1,21 @@
+name: Security
+
+on:
+  pull_request:
+    branches: [main]
+  # Also run weekly to catch newly disclosed CVEs against existing deps.
+  schedule:
+    - cron: "0 6 * * 1" # Every Monday at 06:00 UTC
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit:
+    name: Cargo Audit (RustSec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

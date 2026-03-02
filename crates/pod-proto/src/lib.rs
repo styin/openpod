@@ -5,10 +5,17 @@
 //! - Compiled protobuf message types (Channel A, B, C)
 //! - Shared error types and error code constants
 //! - Protocol version constants
-//! - mTLS certificate and identity primitives
-//! - Tri-channel framing types
+//! - Ed25519 identity and X.509 certificate primitives
+//! - Short Authentication String (SAS) derivation
+//! - Trust store abstraction for TOFU pairing
+//! - TLS configuration (certificate extraction, custom verifiers, config builders)
+//! - Length-delimited protobuf codec
 
-// Re-export generated protobuf types once `pod_protocol.proto` is compiled.
-// pub mod pod_protocol {
-//     include!(concat!(env!("OUT_DIR"), "/pod.rs"));
-// }
+pub mod codec;
+pub mod error;
+pub mod identity;
+pub mod sas;
+pub mod tls;
+pub mod trust;
+pub mod version;
+pub mod wire;

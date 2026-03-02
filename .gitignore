@@ -1,7 +1,6 @@
 # Rust
 /target/
 **/*.rs.bk
-Cargo.lock
 
 # Flutter / Dart
 app/.dart_tool/
@@ -26,6 +25,7 @@ bindings/node/*.node
 # IDE
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 
