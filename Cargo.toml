@@ -17,7 +17,7 @@ pod-proto = { path = "crates/pod-proto" }
 pod-client-core = { path = "crates/pod-client-core" }
 pod-agent-core = { path = "crates/pod-agent-core" }
 prost = "0.13"
-prost-types = "0.13"
+prost-types = "0.14"
 tokio = { version = "1", features = ["full"] }
 thiserror = "2"
 ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8"] }
