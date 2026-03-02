@@ -24,4 +24,4 @@ tracing = { workspace = true }
 bytes = { workspace = true }
 
 [build-dependencies]
-prost-build = "0.13"
+prost-build = "0.14"
