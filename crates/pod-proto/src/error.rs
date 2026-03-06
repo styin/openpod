@@ -51,6 +51,13 @@ pub enum ProtoError {
     #[error("peer denied by trust store: {0}")]
     PeerDenied(String),
 
+    // --- Datagram / Audio ---
+    #[error("invalid datagram: {0}")]
+    InvalidDatagram(String),
+
+    #[error("audio frame decode error: {0}")]
+    AudioFrameDecode(String),
+
     // --- Serialization ---
     #[error("protobuf encode error: {0}")]
     ProtobufEncode(#[from] prost::EncodeError),

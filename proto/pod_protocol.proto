@@ -4,8 +4,11 @@ package pod;
 
 // =============================================================================
 // OpenPod Wire Protocol v0.1.0
-// Defines the message types for the Tri-Channel Multiplexer.
-// See docs/Manifesto-v0.7.1.md for architectural context.
+// Defines the message types for the Quad-Channel Multiplexer.
+// See docs/Manifesto-v0.8.0.md for architectural context.
+//
+// Channel D (Audio) uses a fixed binary codec, NOT protobuf — see pod-proto's
+// datagram module. Only Channels A/B/C are defined here.
 // =============================================================================
 
 // ---------------------------------------------------------------------------
@@ -106,8 +109,9 @@ message Error {
 
 // ---------------------------------------------------------------------------
 // Channel A — Semantic (QUIC Reliable Stream)
-// JSON token deltas, UI intents, file-ready notifications, and permission
-// request/response messages. (Manifesto §2.3, §2.6)
+// JSON token deltas, UI intents, file-ready notifications, permission
+// request/response messages, and audio session management (negotiation,
+// mute/unmute state). (Manifesto §2.3, §2.6, §2.13.2, §2.13.3)
 //
 // All Channel A messages are wrapped in ChannelAEnvelope for application-layer
 // sequencing (§2.11.3). The seq_id/ack_id fields enable message replay after
@@ -132,7 +136,7 @@ message ChannelAEnvelope {
 // A semantic message carrying a JSON payload. (§2.2, §2.6)
 message SemanticMessage {
   // Opaque payload (JSON by default, future TOON). Encoding-agnostic at the
-  // wire level — the interpretation layer decides JSON vs. TOON. (§2.13)
+  // wire level — the interpretation layer decides JSON vs. TOON. (§2.14)
   bytes json_payload = 1;
   // Number of file attachments being uploaded in parallel on dedicated QUIC
   // streams. The SDK buffers this message until all files complete. (§2.6)
@@ -188,9 +192,15 @@ message TelemetryUpdate {
 
 // ---------------------------------------------------------------------------
 // Channel C — Control (Dual-Path: QUIC Unreliable Datagram + Reliable Stream)
-// Interrupt/brake signals. Sent on BOTH paths, deduplicated by signal_id.
-// First arrival triggers the action, the duplicate is discarded.
+// Safety-critical signals (interrupt/brake). Sent on BOTH paths, deduplicated
+// by signal_id. First arrival triggers the action, the duplicate is discarded.
 // (Manifesto §2.3, Axiom I §1.3)
+//
+// Audio mute/unmute state is NOT on Channel C — it is a Channel A semantic
+// message (§2.13.3) so mute state participates in seq/ack replay on reconnect.
+//
+// Datagram path: all QUIC datagrams carry a 1-byte channel tag prefix.
+// Channel C uses tag 0x01, Channel D (audio) uses tag 0x02 (§2.3).
 //
 // No extensible payload — safety-critical path stays rigid and fast to parse.
 // ---------------------------------------------------------------------------
@@ -202,6 +212,9 @@ enum ControlSignalType {
   CONTROL_SIGNAL_TYPE_BRAKE = 1;
   // Soft interrupt — cancel current task gracefully.
   CONTROL_SIGNAL_TYPE_INTERRUPT = 2;
+  // Values 3–4 were AUDIO_MUTE/AUDIO_UNMUTE, moved to Channel A semantic
+  // messages in v0.8.0. Reserved to prevent accidental reuse.
+  reserved 3, 4;
 }
 
 // Control signal sent on BOTH datagram and stream for dual-path delivery.

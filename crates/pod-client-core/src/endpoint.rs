@@ -45,7 +45,12 @@ impl ClientEndpoint {
             quinn::crypto::rustls::QuicClientConfig::try_from(rustls_config)
                 .map_err(|e| ClientError::TlsConfig(format!("rustls→quinn: {e}")))?;
 
-        let client_config = quinn::ClientConfig::new(Arc::new(quic_client_config));
+        let mut transport_config = quinn::TransportConfig::default();
+        // Enable QUIC datagram receive buffer for Channel C and D.
+        transport_config.datagram_receive_buffer_size(Some(65536));
+
+        let mut client_config = quinn::ClientConfig::new(Arc::new(quic_client_config));
+        client_config.transport_config(Arc::new(transport_config));
 
         let bind_addr: SocketAddr = "0.0.0.0:0".parse().unwrap();
         let mut endpoint =
