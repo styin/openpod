@@ -10,8 +10,9 @@
 
 use std::sync::Arc;
 
-use pod_agent_core::AgentEndpoint;
+use pod_agent_core::{AgentEndpoint, ReceivedDatagram};
 use pod_client_core::ClientEndpoint;
+use pod_proto::datagram::AudioFrame;
 use pod_proto::identity::{Certificate, Keypair, PodId};
 use pod_proto::sas;
 use pod_proto::trust::{MemoryTrustStore, TrustPolicy, TrustStore};
@@ -428,6 +429,130 @@ async fn both_sides_derive_same_tls_exporter_key() {
     assert_eq!(agent_oob_sas, client_oob_sas, "OOB SAS must match");
     assert_ne!(agent_sas, agent_oob_sas, "OOB nonce must change the SAS");
     eprintln!("   [ok] OOB SAS codes match and differ from manual SAS");
+
+    agent.close();
+    client_endpoint.close();
+    eprintln!("\n   [ok] PASS\n");
+}
+
+// ---------------------------------------------------------------------------
+// Test: audio frame datagram roundtrip (Channel D)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn audio_frame_datagram_roundtrip() {
+    init_tracing();
+    eprintln!("\n{}", "=".repeat(72));
+    eprintln!("TEST: audio_frame_datagram_roundtrip");
+    eprintln!("{}", "=".repeat(72));
+
+    let (agent_kp, agent_cert, _) = make_identity("AGENT");
+    let (client_kp, client_cert, _) = make_identity("CLIENT");
+
+    let agent_store = Arc::new(MemoryTrustStore::new());
+    let client_store = Arc::new(MemoryTrustStore::new());
+
+    eprintln!("\n-- AGENT: binding (PairingMode)...");
+    let agent = AgentEndpoint::bind(
+        "127.0.0.1:0".parse().unwrap(),
+        &agent_kp,
+        &agent_cert,
+        agent_store,
+        TrustPolicy::PairingMode,
+    )
+    .expect("agent should bind");
+
+    let agent_addr = agent.local_addr().unwrap();
+    eprintln!("   bound to: {agent_addr}");
+
+    eprintln!("\n-- CLIENT: creating endpoint (PairingMode)...");
+    let client_endpoint = ClientEndpoint::new(
+        &client_kp,
+        &client_cert,
+        client_store,
+        TrustPolicy::PairingMode,
+    )
+    .expect("client endpoint should create");
+
+    eprintln!("-- Connecting...");
+    let (agent_conn, client_conn) =
+        tokio::join!(agent.accept(), client_endpoint.connect(agent_addr));
+
+    let agent_conn = agent_conn.expect("agent should accept");
+    let client_conn = client_conn.expect("client should connect");
+    eprintln!("   [ok] Connected");
+
+    // Client sends audio frames to agent.
+    let frame_count = 10u16;
+    eprintln!("\n-- CLIENT: sending {frame_count} audio frames via datagrams (Channel D)...");
+    for seq in 0..frame_count {
+        let frame = AudioFrame {
+            seq,
+            timestamp: u32::from(seq) * 960, // 20ms at 48kHz
+            flags: 0,
+            audio_data: vec![0xAA; 80], // Simulated 80-byte Opus frame
+        };
+        client_conn
+            .send_audio_datagram(&frame)
+            .expect("client should send audio datagram");
+    }
+    eprintln!("   [ok] Sent {frame_count} frames");
+
+    // Agent receives and verifies.
+    eprintln!("\n-- AGENT: receiving audio frames...");
+    for expected_seq in 0..frame_count {
+        let received = agent_conn
+            .recv_datagram()
+            .await
+            .expect("agent should receive datagram");
+
+        match received {
+            ReceivedDatagram::Audio(frame) => {
+                assert_eq!(frame.seq, expected_seq);
+                assert_eq!(frame.timestamp, u32::from(expected_seq) * 960);
+                assert_eq!(frame.audio_data.len(), 80);
+            }
+            ReceivedDatagram::Control(_) => {
+                panic!("expected audio frame, got control signal");
+            }
+        }
+    }
+    eprintln!("   [ok] Received and verified {frame_count} frames");
+
+    // Agent sends audio frames back to client (bidirectional test).
+    eprintln!("\n-- AGENT: sending {frame_count} audio frames back to client...");
+    for seq in 0..frame_count {
+        let frame = AudioFrame {
+            seq,
+            timestamp: u32::from(seq) * 960,
+            flags: 0,
+            audio_data: vec![0xBB; 60], // Different payload to distinguish
+        };
+        agent_conn
+            .send_audio_datagram(&frame)
+            .expect("agent should send audio datagram");
+    }
+    eprintln!("   [ok] Sent {frame_count} frames");
+
+    eprintln!("\n-- CLIENT: receiving audio frames...");
+    for expected_seq in 0..frame_count {
+        let received = client_conn
+            .recv_datagram()
+            .await
+            .expect("client should receive datagram");
+
+        match received {
+            pod_client_core::ReceivedDatagram::Audio(frame) => {
+                assert_eq!(frame.seq, expected_seq);
+                assert_eq!(frame.timestamp, u32::from(expected_seq) * 960);
+                assert_eq!(frame.audio_data.len(), 60);
+            }
+            pod_client_core::ReceivedDatagram::Control(_) => {
+                panic!("expected audio frame, got control signal");
+            }
+        }
+    }
+    eprintln!("   [ok] Received and verified {frame_count} frames (bidirectional confirmed)");
 
     agent.close();
     client_endpoint.close();

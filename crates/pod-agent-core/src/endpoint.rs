@@ -40,7 +40,12 @@ impl AgentEndpoint {
             quinn::crypto::rustls::QuicServerConfig::try_from(rustls_config)
                 .map_err(|e| AgentError::TlsConfig(format!("rustls→quinn: {e}")))?;
 
-        let server_config = quinn::ServerConfig::with_crypto(Arc::new(quic_server_config));
+        let mut transport_config = quinn::TransportConfig::default();
+        // Enable QUIC datagram receive buffer for Channel C and D.
+        transport_config.datagram_receive_buffer_size(Some(65536));
+
+        let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(quic_server_config));
+        server_config.transport_config(Arc::new(transport_config));
 
         let endpoint = quinn::Endpoint::server(server_config, addr)
             .map_err(|e| AgentError::Bind(e.to_string()))?;

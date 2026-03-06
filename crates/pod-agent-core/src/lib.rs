@@ -6,7 +6,8 @@
 //! - QUIC server (accepts incoming Pod connections via quinn)
 //! - mDNS service advertiser (opt-in, broadcasts `_openpod._udp.local`)
 //! - Server-side mTLS handshake and client verification
-//! - Tri-channel session multiplexing (semantic, telemetry, control)
+//! - Quad-channel session multiplexing (semantic, telemetry, control, audio)
+//! - Datagram demux for Channel C (control) and Channel D (audio)
 //! - `.pod_cache` session file cache management
 
 pub mod connection;
@@ -14,6 +15,6 @@ pub mod endpoint;
 pub mod error;
 pub mod stream_io;
 
-pub use connection::PodConnection;
+pub use connection::{PodConnection, ReceivedDatagram};
 pub use endpoint::AgentEndpoint;
 pub use error::AgentError;

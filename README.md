@@ -97,7 +97,7 @@ sequenceDiagram
     end
 
     rect rgb(230, 255, 230)
-    Note over User, Agent: OpenPod - QUIC Tri-Channel Multiplexing
+    Note over User, Agent: OpenPod - QUIC Quad-Channel Multiplexing
     User->>App: Send message + 500MB File
     par Semantic Channel (Stream A)
         App->>Agent: Instantly: Analyze this file (Protobuf)
@@ -177,4 +177,4 @@ openpod/
 
 ---
 
-_Read `docs/Manifesto-v0.7.1.md` for the full U2A specification and architectural directive._
+_Read `docs/Manifesto-v0.8.0.md` for the full U2A specification and architectural directive._

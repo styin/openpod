@@ -26,6 +26,9 @@ pub enum ClientError {
     #[error("stream I/O error: {0}")]
     StreamIo(String),
 
+    #[error("datagram error: {0}")]
+    Datagram(String),
+
     #[error("protocol error: {0}")]
     Protocol(#[from] pod_proto::error::ProtoError),
 }
