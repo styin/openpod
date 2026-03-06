@@ -48,10 +48,10 @@ pub fn tag_datagram(tag: DatagramTag, payload: &[u8]) -> Vec<u8> {
 
 /// Strip the channel tag from a datagram, returning the tag and payload.
 ///
-/// Returns `Err` if the datagram is empty, `Ok((None, &[]))` should not
-/// happen since empty datagrams are rejected. Unknown tags return
+/// Returns `Err` if the datagram is empty. Unknown tags return
 /// `Ok((None, payload))` for forward compatibility — the caller should
-/// silently drop unknown tags.
+/// silently drop unknown tags. Note: a 1-byte datagram (tag only) is
+/// valid and produces an empty payload slice.
 pub fn untag_datagram(data: &[u8]) -> Result<(Option<DatagramTag>, &[u8])> {
     if data.is_empty() {
         return Err(ProtoError::InvalidDatagram("empty datagram".into()));
@@ -99,10 +99,42 @@ pub struct AudioFrame {
 impl AudioFrame {
     /// Encode this frame into its fixed binary representation.
     ///
-    /// Does **not** include the datagram channel tag — use [`tag_datagram`]
-    /// to wrap the result for transmission.
+    /// Does **not** include the datagram channel tag — use [`encode_tagged`]
+    /// for the single-allocation hot path, or [`tag_datagram`] to wrap
+    /// the result separately.
+    ///
+    /// # Panics (debug builds)
+    ///
+    /// Panics if `FLAG_DTX` is set but `audio_data` is non-empty.
     pub fn encode(&self) -> Vec<u8> {
+        debug_assert!(
+            self.flags & FLAG_DTX == 0 || self.audio_data.is_empty(),
+            "DTX flag set but audio_data is non-empty — this frame will fail to decode"
+        );
         let mut buf = Vec::with_capacity(AUDIO_HEADER_SIZE + self.audio_data.len());
+        buf.extend_from_slice(&self.seq.to_be_bytes());
+        buf.extend_from_slice(&self.timestamp.to_be_bytes());
+        buf.push(self.flags);
+        buf.extend_from_slice(&self.audio_data);
+        buf
+    }
+
+    /// Encode this frame with a prepended datagram channel tag in a
+    /// **single allocation** — the hot-path method for real-time audio.
+    ///
+    /// Equivalent to `tag_datagram(tag, &self.encode())` but avoids the
+    /// intermediate `Vec` and full-payload copy.
+    ///
+    /// # Panics (debug builds)
+    ///
+    /// Panics if `FLAG_DTX` is set but `audio_data` is non-empty.
+    pub fn encode_tagged(&self, tag: DatagramTag) -> Vec<u8> {
+        debug_assert!(
+            self.flags & FLAG_DTX == 0 || self.audio_data.is_empty(),
+            "DTX flag set but audio_data is non-empty — this frame will fail to decode"
+        );
+        let mut buf = Vec::with_capacity(1 + AUDIO_HEADER_SIZE + self.audio_data.len());
+        buf.push(tag as u8);
         buf.extend_from_slice(&self.seq.to_be_bytes());
         buf.extend_from_slice(&self.timestamp.to_be_bytes());
         buf.push(self.flags);

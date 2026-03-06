@@ -73,9 +73,10 @@ impl PodConnection {
     }
 
     /// Send an audio frame as a tagged datagram (Channel D, tag `0x02`).
+    ///
+    /// Uses single-allocation encoding to minimize hot-path overhead.
     pub fn send_audio_datagram(&self, frame: &AudioFrame) -> Result<()> {
-        let payload = frame.encode();
-        let tagged = datagram::tag_datagram(DatagramTag::Audio, &payload);
+        let tagged = frame.encode_tagged(DatagramTag::Audio);
         self.inner
             .send_datagram(Bytes::from(tagged))
             .map_err(|e| ClientError::Datagram(format!("send audio: {e}")))?;

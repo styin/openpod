@@ -8,6 +8,7 @@
 //! cargo test -p pod-agent-core --test connection_test -- --nocapture
 //! ```
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use pod_agent_core::{AgentEndpoint, ReceivedDatagram};
@@ -498,9 +499,11 @@ async fn audio_frame_datagram_roundtrip() {
     }
     eprintln!("   [ok] Sent {frame_count} frames");
 
-    // Agent receives and verifies.
+    // Agent receives and verifies (tolerating potential reordering —
+    // QUIC datagrams are unreliable and not guaranteed in-order).
     eprintln!("\n-- AGENT: receiving audio frames...");
-    for expected_seq in 0..frame_count {
+    let mut received_seqs: HashSet<u16> = HashSet::new();
+    for _ in 0..frame_count {
         let received = agent_conn
             .recv_datagram()
             .await
@@ -508,15 +511,21 @@ async fn audio_frame_datagram_roundtrip() {
 
         match received {
             ReceivedDatagram::Audio(frame) => {
-                assert_eq!(frame.seq, expected_seq);
-                assert_eq!(frame.timestamp, u32::from(expected_seq) * 960);
+                assert!(frame.seq < frame_count, "seq out of expected range");
+                assert_eq!(frame.timestamp, u32::from(frame.seq) * 960);
                 assert_eq!(frame.audio_data.len(), 80);
+                received_seqs.insert(frame.seq);
             }
             ReceivedDatagram::Control(_) => {
                 panic!("expected audio frame, got control signal");
             }
         }
     }
+    assert_eq!(
+        received_seqs.len(),
+        frame_count as usize,
+        "all frames should arrive (localhost)"
+    );
     eprintln!("   [ok] Received and verified {frame_count} frames");
 
     // Agent sends audio frames back to client (bidirectional test).
@@ -535,7 +544,8 @@ async fn audio_frame_datagram_roundtrip() {
     eprintln!("   [ok] Sent {frame_count} frames");
 
     eprintln!("\n-- CLIENT: receiving audio frames...");
-    for expected_seq in 0..frame_count {
+    let mut received_seqs: HashSet<u16> = HashSet::new();
+    for _ in 0..frame_count {
         let received = client_conn
             .recv_datagram()
             .await
@@ -543,15 +553,21 @@ async fn audio_frame_datagram_roundtrip() {
 
         match received {
             pod_client_core::ReceivedDatagram::Audio(frame) => {
-                assert_eq!(frame.seq, expected_seq);
-                assert_eq!(frame.timestamp, u32::from(expected_seq) * 960);
+                assert!(frame.seq < frame_count, "seq out of expected range");
+                assert_eq!(frame.timestamp, u32::from(frame.seq) * 960);
                 assert_eq!(frame.audio_data.len(), 60);
+                received_seqs.insert(frame.seq);
             }
             pod_client_core::ReceivedDatagram::Control(_) => {
                 panic!("expected audio frame, got control signal");
             }
         }
     }
+    assert_eq!(
+        received_seqs.len(),
+        frame_count as usize,
+        "all frames should arrive (localhost)"
+    );
     eprintln!("   [ok] Received and verified {frame_count} frames (bidirectional confirmed)");
 
     agent.close();
