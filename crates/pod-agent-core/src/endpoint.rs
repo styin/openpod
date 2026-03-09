@@ -44,6 +44,9 @@ pub(crate) struct StoredSessionState {
     pub(crate) next_agent_seq_id: u64,
     pub(crate) outbound_buffer: VecDeque<wire::ChannelAEnvelope>,
     pub(crate) expires_at: Instant,
+    /// `true` while an `AgentSession` is bound to this state on a live
+    /// connection. Guards against concurrent resume from two connections.
+    pub(crate) is_active: bool,
 }
 
 impl StoredSessionState {
@@ -59,6 +62,7 @@ impl StoredSessionState {
             next_agent_seq_id: 1,
             outbound_buffer: VecDeque::new(),
             expires_at: now + reconnection_window,
+            is_active: false,
         }
     }
 
@@ -90,12 +94,37 @@ impl AgentEndpoint {
     ///
     /// Uses the provided identity keypair and certificate for mTLS.
     /// The trust store and policy control which peers are accepted.
+    /// The reconnection window defaults to 5 minutes; use
+    /// `bind_with_reconnection_window` to override it.
     pub fn bind(
         addr: SocketAddr,
         keypair: &Keypair,
         cert: &Certificate,
         trust_store: Arc<dyn TrustStore>,
         policy: TrustPolicy,
+    ) -> Result<Self> {
+        Self::bind_with_reconnection_window(
+            addr,
+            keypair,
+            cert,
+            trust_store,
+            policy,
+            DEFAULT_RECONNECTION_WINDOW,
+        )
+    }
+
+    /// Bind a QUIC server with an explicit session reconnection window.
+    ///
+    /// Equivalent to `bind` but allows overriding the reconnection window
+    /// (the duration a disconnected session is held in memory for resumption).
+    /// Useful in tests and deployments with tighter latency requirements.
+    pub fn bind_with_reconnection_window(
+        addr: SocketAddr,
+        keypair: &Keypair,
+        cert: &Certificate,
+        trust_store: Arc<dyn TrustStore>,
+        policy: TrustPolicy,
+        reconnection_window: Duration,
     ) -> Result<Self> {
         let rustls_config = build_server_tls_config(keypair, cert, trust_store, policy)?;
 
@@ -119,7 +148,7 @@ impl AgentEndpoint {
             endpoint,
             next_session_id: AtomicU64::new(1),
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            reconnection_window: DEFAULT_RECONNECTION_WINDOW,
+            reconnection_window,
         })
     }
 
@@ -218,6 +247,21 @@ impl AgentEndpoint {
         }
 
         let now = Instant::now();
+
+        // Opportunistically remove sessions whose reconnection window has
+        // expired. Prevents unbounded growth when clients disconnect and never
+        // reconnect — expiry is otherwise only enforced on the resume path.
+        self.sessions
+            .lock()
+            .expect("agent session registry poisoned")
+            .retain(|_, state| {
+                state
+                    .lock()
+                    .expect("agent session state poisoned")
+                    .expires_at
+                    > now
+            });
+
         let (session_id, state) = if init.resume_session_id.is_empty() {
             let session_id = self.allocate_session_id();
             let state = Arc::new(Mutex::new(StoredSessionState::new(
@@ -261,6 +305,12 @@ impl AgentEndpoint {
                         "session resumption window has expired".into(),
                     ));
                 }
+                if state_guard.is_active {
+                    return Err(AgentError::Handshake(
+                        "session already has an active connection; concurrent resume rejected"
+                            .into(),
+                    ));
+                }
                 state_guard.prune_acked_messages(init.last_ack_id);
                 state_guard.expires_at = now + self.reconnection_window;
             }
@@ -278,6 +328,11 @@ impl AgentEndpoint {
         };
 
         stream_io::write_message(&mut send, &ack).await?;
+
+        state
+            .lock()
+            .expect("agent session state poisoned")
+            .is_active = true;
 
         let session = AgentSession::new(
             conn,

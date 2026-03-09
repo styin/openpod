@@ -97,7 +97,7 @@ impl AgentSession {
             .map_err(|e| AgentError::Handshake(format!("accept Channel A stream: {e}")))?;
 
         let envelope: pod_proto::wire::ChannelAEnvelope =
-            stream_io::read_message(&mut recv).await?;
+            stream_io::read_channel_a_message(&mut recv).await?;
 
         let mut state = self.state.lock().expect("agent session state poisoned");
         state.prune_acked_messages(envelope.ack_id);
@@ -128,8 +128,12 @@ impl AgentSession {
         Ok(())
     }
 
-    /// Wait for the peer to initiate graceful close, acknowledge it, and close
-    /// the QUIC connection.
+    /// Wait for the peer to initiate graceful close and acknowledge it.
+    ///
+    /// Reads `SessionClose` from a new bidirectional stream, writes
+    /// `SessionCloseAck`, and returns. The QUIC connection is closed by the
+    /// initiating side (via `close()`); callers of `accept_close` should not
+    /// rely on this function explicitly closing the connection.
     pub async fn accept_close(&self) -> Result<SessionClose> {
         let (mut send, mut recv) = self
             .connection
@@ -196,5 +200,16 @@ impl AgentSession {
             .lock()
             .expect("agent session registry poisoned")
             .remove(&self.session_id);
+    }
+}
+
+impl Drop for AgentSession {
+    fn drop(&mut self) {
+        // Clear is_active so the session can be resumed on a new connection
+        // after an ungraceful disconnect (where close() / accept_close() are
+        // never called and unregister() is never reached).
+        if let Ok(mut state) = self.state.lock() {
+            state.is_active = false;
+        }
     }
 }

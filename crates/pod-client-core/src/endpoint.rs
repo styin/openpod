@@ -192,6 +192,13 @@ impl ClientEndpoint {
 
         let session = match resume_state {
             Some(resume_state) => {
+                if ack.session_id != resume_state.session_id() {
+                    return Err(ClientError::Handshake(format!(
+                        "agent returned session id '{}' but resume requested '{}'",
+                        ack.session_id,
+                        resume_state.session_id()
+                    )));
+                }
                 let session = ClientSession::from_resume_state(
                     conn,
                     ack.session_id,

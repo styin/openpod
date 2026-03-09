@@ -181,7 +181,7 @@ impl ClientSession {
             .await
             .map_err(|e| ClientError::Handshake(format!("accept Channel A stream: {e}")))?;
 
-        let envelope: ChannelAEnvelope = stream_io::read_message(&mut recv).await?;
+        let envelope: ChannelAEnvelope = stream_io::read_channel_a_message(&mut recv).await?;
 
         let mut state = self.state.lock().expect("client session state poisoned");
         state.prune_acked_messages(envelope.ack_id);
@@ -247,8 +247,12 @@ impl ClientSession {
         Ok(())
     }
 
-    /// Wait for the peer to initiate graceful close, acknowledge it, and close
-    /// the QUIC connection.
+    /// Wait for the peer to initiate graceful close and acknowledge it.
+    ///
+    /// Reads `SessionClose` from a new bidirectional stream, writes
+    /// `SessionCloseAck`, and returns. The QUIC connection is closed by the
+    /// initiating side (via `close()`); callers of `accept_close` should not
+    /// rely on this function explicitly closing the connection.
     pub async fn accept_close(&self) -> Result<SessionClose> {
         let (mut send, mut recv) = self
             .connection
