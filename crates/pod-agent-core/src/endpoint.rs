@@ -255,11 +255,10 @@ impl AgentEndpoint {
             .lock()
             .expect("agent session registry poisoned")
             .retain(|_, state| {
-                state
-                    .lock()
-                    .expect("agent session state poisoned")
-                    .expires_at
-                    > now
+                let s = state.lock().expect("agent session state poisoned");
+                // Keep active sessions regardless of expiry: an idle-but-live
+                // connection must not be evicted before it disconnects.
+                s.is_active || s.expires_at > now
             });
 
         let (session_id, state) = if init.resume_session_id.is_empty() {
@@ -313,6 +312,11 @@ impl AgentEndpoint {
                 }
                 state_guard.prune_acked_messages(init.last_ack_id);
                 state_guard.expires_at = now + self.reconnection_window;
+                // Claim the session atomically inside this lock guard.
+                // Setting is_active here (rather than after the ack write)
+                // eliminates the TOCTOU window where two concurrent resumes
+                // could both observe is_active == false and both proceed.
+                state_guard.is_active = true;
             }
 
             (init.resume_session_id.clone(), state)
@@ -327,12 +331,14 @@ impl AgentEndpoint {
             last_ack_id,
         };
 
-        stream_io::write_message(&mut send, &ack).await?;
-
-        state
-            .lock()
-            .expect("agent session state poisoned")
-            .is_active = true;
+        if let Err(e) = stream_io::write_message(&mut send, &ack).await {
+            // Ack failed; release the claim so the client can retry.
+            state
+                .lock()
+                .expect("agent session state poisoned")
+                .is_active = false;
+            return Err(e);
+        }
 
         let session = AgentSession::new(
             conn,

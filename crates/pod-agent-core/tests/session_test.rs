@@ -588,7 +588,7 @@ async fn large_channel_a_envelope_delivered_in_both_directions() {
     let agent_session = agent_result.expect("agent session should establish");
     let client_session = client_result.expect("client session should establish");
 
-    // Agent → Client: 128 KiB payload.
+    // Agent → Client: 8 MiB payload.
     let (agent_send_result, client_recv_result) = tokio::join!(
         agent_session.send_envelope(large_semantic_payload(PAYLOAD_SIZE)),
         client_session.accept_envelope()
@@ -601,7 +601,7 @@ async fn large_channel_a_envelope_delivered_in_both_directions() {
         other => panic!("expected semantic payload, got {other:?}"),
     }
 
-    // Client → Agent: 128 KiB payload.
+    // Client → Agent: 8 MiB payload.
     let (client_send_result, agent_recv_result) = tokio::join!(
         client_session.send_envelope(large_semantic_payload(PAYLOAD_SIZE)),
         agent_session.accept_envelope()
