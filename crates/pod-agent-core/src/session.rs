@@ -154,7 +154,11 @@ impl AgentSession {
     }
 
     /// Initiate graceful close for this session.
-    pub async fn close(&self, reason: SessionCloseReason, message: impl Into<String>) -> Result<()> {
+    pub async fn close(
+        &self,
+        reason: SessionCloseReason,
+        message: impl Into<String>,
+    ) -> Result<()> {
         let (mut send, mut recv) = self
             .connection
             .inner()

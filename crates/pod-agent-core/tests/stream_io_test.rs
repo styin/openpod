@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use pod_agent_core::{stream_io as agent_stream_io, AgentEndpoint};
-use pod_client_core::{stream_io as client_stream_io, ClientEndpoint};
+use pod_agent_core::{AgentEndpoint, stream_io as agent_stream_io};
+use pod_client_core::{ClientEndpoint, stream_io as client_stream_io};
 use pod_proto::identity::{Certificate, Keypair, PodId};
 use pod_proto::trust::{MemoryTrustStore, TrustPolicy};
 use pod_proto::wire::{
-    self, channel_a_envelope::Payload, ChannelAEnvelope, Handshake, HandshakeResponse,
-    PermissionRequest, PermissionResponse, SemanticMessage,
+    self, ChannelAEnvelope, Handshake, HandshakeResponse, PermissionRequest, PermissionResponse,
+    SemanticMessage, channel_a_envelope::Payload,
 };
 
 /// Reference epoch: 2025-01-01 00:00:00 UTC.
@@ -28,7 +28,12 @@ fn make_identity() -> (Keypair, Certificate, PodId) {
     (kp, cert, pod_id)
 }
 
-async fn connect_pair() -> (AgentEndpoint, ClientEndpoint, pod_agent_core::PodConnection, pod_client_core::PodConnection) {
+async fn connect_pair() -> (
+    AgentEndpoint,
+    ClientEndpoint,
+    pod_agent_core::PodConnection,
+    pod_client_core::PodConnection,
+) {
     let (agent_kp, agent_cert, _agent_pod_id) = make_identity();
     let (client_kp, client_cert, _client_pod_id) = make_identity();
 
@@ -190,7 +195,10 @@ async fn permission_request_response_over_quic_stream() {
         match received.payload {
             Some(Payload::PermissionRequest(request)) => {
                 assert_eq!(request.request_id, "perm-1");
-                assert_eq!(request.description_json, br#"{"action":"rm -rf /tmp/demo"}"#);
+                assert_eq!(
+                    request.description_json,
+                    br#"{"action":"rm -rf /tmp/demo"}"#
+                );
             }
             other => panic!("expected permission request, got {other:?}"),
         }

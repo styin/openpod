@@ -120,7 +120,8 @@ impl ClientEndpoint {
             last_ack_id: resume_state.last_client_ack_id(),
         };
         let conn = self.connect(agent_addr).await?;
-        self.run_session_init(conn, options, Some(resume_state)).await
+        self.run_session_init(conn, options, Some(resume_state))
+            .await
     }
 
     /// Run the client side of the protocol handshake.

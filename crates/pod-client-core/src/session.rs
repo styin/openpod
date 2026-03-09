@@ -36,7 +36,10 @@ impl ClientSessionState {
         }
     }
 
-    fn next_outbound_envelope(&mut self, payload: wire::channel_a_envelope::Payload) -> ChannelAEnvelope {
+    fn next_outbound_envelope(
+        &mut self,
+        payload: wire::channel_a_envelope::Payload,
+    ) -> ChannelAEnvelope {
         let envelope = ChannelAEnvelope {
             seq_id: self.next_client_seq_id,
             ack_id: self.last_client_ack_id,
@@ -48,7 +51,8 @@ impl ClientSessionState {
     }
 
     fn prune_acked_messages(&mut self, ack_id: u64) {
-        self.outbound_buffer.retain(|message| message.seq_id > ack_id);
+        self.outbound_buffer
+            .retain(|message| message.seq_id > ack_id);
         self.last_agent_ack_id = self.last_agent_ack_id.max(ack_id);
     }
 }
@@ -89,7 +93,11 @@ pub struct ClientSession {
 }
 
 impl ClientSession {
-    pub(crate) fn new(connection: PodConnection, session_id: String, agent_last_ack_id: u64) -> Self {
+    pub(crate) fn new(
+        connection: PodConnection,
+        session_id: String,
+        agent_last_ack_id: u64,
+    ) -> Self {
         Self {
             connection,
             session_id,
@@ -204,7 +212,11 @@ impl ClientSession {
     }
 
     /// Initiate graceful close for this session.
-    pub async fn close(&self, reason: SessionCloseReason, message: impl Into<String>) -> Result<()> {
+    pub async fn close(
+        &self,
+        reason: SessionCloseReason,
+        message: impl Into<String>,
+    ) -> Result<()> {
         let (mut send, mut recv) = self
             .connection
             .inner()

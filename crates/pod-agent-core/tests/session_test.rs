@@ -6,7 +6,7 @@ use pod_agent_core::AgentEndpoint;
 use pod_client_core::{ClientEndpoint, SessionInitOptions};
 use pod_proto::identity::{Certificate, Keypair, PodId};
 use pod_proto::trust::{MemoryTrustStore, TrustPolicy};
-use pod_proto::wire::{channel_a_envelope::Payload, SemanticMessage, SessionCloseReason};
+use pod_proto::wire::{SemanticMessage, SessionCloseReason, channel_a_envelope::Payload};
 
 /// Reference epoch: 2025-01-01 00:00:00 UTC.
 const JAN_1_2025: i64 = 1735689600;
@@ -69,8 +69,14 @@ async fn session_establishment_and_client_initiated_close_work() {
     assert_eq!(agent_session.session_id(), client_session.session_id());
     assert_eq!(agent_session.client_last_ack_id(), 0);
     assert_eq!(client_session.agent_last_ack_id(), 0);
-    assert_eq!(agent_session.connection().peer_pod_id().as_bytes(), client_pod_id.as_bytes());
-    assert_eq!(client_session.connection().peer_pod_id().as_bytes(), agent_pod_id.as_bytes());
+    assert_eq!(
+        agent_session.connection().peer_pod_id().as_bytes(),
+        client_pod_id.as_bytes()
+    );
+    assert_eq!(
+        client_session.connection().peer_pod_id().as_bytes(),
+        agent_pod_id.as_bytes()
+    );
 
     let (agent_close_result, client_close_result) = tokio::join!(
         agent_session.accept_close(),

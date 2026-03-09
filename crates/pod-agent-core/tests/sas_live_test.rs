@@ -25,7 +25,12 @@ fn make_identity() -> (Keypair, Certificate, PodId) {
     (kp, cert, pod_id)
 }
 
-async fn connect_pair() -> (AgentEndpoint, ClientEndpoint, pod_agent_core::PodConnection, pod_client_core::PodConnection) {
+async fn connect_pair() -> (
+    AgentEndpoint,
+    ClientEndpoint,
+    pod_agent_core::PodConnection,
+    pod_client_core::PodConnection,
+) {
     let (agent_kp, agent_cert, _agent_pod_id) = make_identity();
     let (client_kp, client_cert, _client_pod_id) = make_identity();
 

@@ -4,8 +4,8 @@
 //! and accepting incoming connections with mTLS verification.
 
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use std::collections::{HashMap, VecDeque};
@@ -47,7 +47,11 @@ pub(crate) struct StoredSessionState {
 }
 
 impl StoredSessionState {
-    fn new(peer_pod_id: pod_proto::identity::PodId, now: Instant, reconnection_window: Duration) -> Self {
+    fn new(
+        peer_pod_id: pod_proto::identity::PodId,
+        now: Instant,
+        reconnection_window: Duration,
+    ) -> Self {
         Self {
             peer_pod_id,
             last_agent_ack_id: 0,
@@ -59,7 +63,8 @@ impl StoredSessionState {
     }
 
     pub(crate) fn prune_acked_messages(&mut self, ack_id: u64) {
-        self.outbound_buffer.retain(|message| message.seq_id > ack_id);
+        self.outbound_buffer
+            .retain(|message| message.seq_id > ack_id);
         self.last_client_ack_id = self.last_client_ack_id.max(ack_id);
     }
 
@@ -226,11 +231,18 @@ impl AgentEndpoint {
                 .insert(session_id.clone(), state.clone());
             (session_id, state)
         } else {
-            let registry = self.sessions.lock().expect("agent session registry poisoned");
+            let registry = self
+                .sessions
+                .lock()
+                .expect("agent session registry poisoned");
             let state = registry
                 .get(&init.resume_session_id)
                 .cloned()
-                .ok_or_else(|| AgentError::Handshake("session resumption requested for unknown session id".into()))?;
+                .ok_or_else(|| {
+                    AgentError::Handshake(
+                        "session resumption requested for unknown session id".into(),
+                    )
+                })?;
             drop(registry);
 
             {
