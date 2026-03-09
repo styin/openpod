@@ -19,4 +19,4 @@ pub mod stream_io;
 pub use connection::{PodConnection, ReceivedDatagram};
 pub use endpoint::AgentEndpoint;
 pub use error::AgentError;
-pub use session::AgentSession;
+pub use session::{AgentSession, InboundStream};

@@ -4,11 +4,26 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 
 use pod_proto::wire::{self, ChannelAEnvelope, SessionClose, SessionCloseAck, SessionCloseReason};
+use quinn::SendStream;
 use tracing::info;
 
 use crate::connection::PodConnection;
 use crate::error::{ClientError, Result};
 use crate::stream_io;
+
+/// A stream accepted from the peer after session establishment.
+pub enum InboundStream {
+    /// A Channel A envelope from the peer.
+    Envelope(ChannelAEnvelope),
+    /// A graceful session close request from the peer.
+    ///
+    /// The caller must write `SessionCloseAck` via `acknowledge_close()` or
+    /// manually on the returned `SendStream`.
+    Close {
+        close: SessionClose,
+        send: SendStream,
+    },
+}
 
 struct ClientSessionState {
     last_agent_ack_id: u64,
@@ -167,27 +182,68 @@ impl ClientSession {
             .await
             .map_err(|e| ClientError::Handshake(format!("open Channel A stream: {e}")))?;
 
-        stream_io::write_message(&mut send, &envelope).await?;
+        stream_io::write_tagged_message(&mut send, stream_io::StreamTag::Envelope, &envelope)
+            .await?;
 
         Ok(envelope)
     }
 
-    /// Receive the next Channel A envelope from the agent and update ack state.
-    pub async fn accept_envelope(&self) -> Result<ChannelAEnvelope> {
-        let (_send, mut recv) = self
+    /// Accept the next tagged stream from the peer.
+    ///
+    /// Calls `accept_bi()`, reads the 1-byte stream tag, and decodes the
+    /// appropriate message type. Returns `InboundStream::Envelope` for
+    /// Channel A envelopes or `InboundStream::Close` for session close
+    /// requests.
+    ///
+    /// For `InboundStream::Close`, the caller is responsible for writing
+    /// `SessionCloseAck` via [`acknowledge_close()`](Self::acknowledge_close).
+    pub async fn accept_stream(&self) -> Result<InboundStream> {
+        let (send, mut recv) = self
             .connection
             .inner()
             .accept_bi()
             .await
-            .map_err(|e| ClientError::Handshake(format!("accept Channel A stream: {e}")))?;
+            .map_err(|e| ClientError::Handshake(format!("accept stream: {e}")))?;
 
-        let envelope: ChannelAEnvelope = stream_io::read_channel_a_message(&mut recv).await?;
+        let tag = stream_io::read_stream_tag(&mut recv).await?;
 
-        let mut state = self.state.lock().expect("client session state poisoned");
-        state.prune_acked_messages(envelope.ack_id);
-        state.last_client_ack_id = state.last_client_ack_id.max(envelope.seq_id);
+        match tag {
+            stream_io::StreamTag::Envelope => {
+                let envelope: ChannelAEnvelope =
+                    stream_io::read_channel_a_message(&mut recv).await?;
 
-        Ok(envelope)
+                let mut state = self.state.lock().expect("client session state poisoned");
+                state.prune_acked_messages(envelope.ack_id);
+                state.last_client_ack_id = state.last_client_ack_id.max(envelope.seq_id);
+
+                Ok(InboundStream::Envelope(envelope))
+            }
+            stream_io::StreamTag::Close => {
+                let close: SessionClose = stream_io::read_message(&mut recv).await?;
+                Ok(InboundStream::Close { close, send })
+            }
+        }
+    }
+
+    /// Acknowledge a received session close.
+    ///
+    /// Writes `SessionCloseAck` on the provided `SendStream` (from
+    /// `InboundStream::Close`) and logs.
+    pub async fn acknowledge_close(
+        &self,
+        close: &SessionClose,
+        mut send: SendStream,
+    ) -> Result<()> {
+        stream_io::write_message(&mut send, &SessionCloseAck {}).await?;
+
+        info!(
+            peer = %self.connection.peer_pod_id(),
+            session_id = %self.session_id,
+            reason = ?close.reason(),
+            "session close acknowledged"
+        );
+
+        Ok(())
     }
 
     pub(crate) async fn prune_and_replay_pending_messages(&self) -> Result<()> {
@@ -205,7 +261,8 @@ impl ClientSession {
                 .open_bi()
                 .await
                 .map_err(|e| ClientError::Handshake(format!("open replay stream: {e}")))?;
-            stream_io::write_message(&mut send, &envelope).await?;
+            stream_io::write_tagged_message(&mut send, stream_io::StreamTag::Envelope, &envelope)
+                .await?;
         }
 
         Ok(())
@@ -229,7 +286,7 @@ impl ClientSession {
             message: message.into(),
         };
 
-        stream_io::write_message(&mut send, &close).await?;
+        stream_io::write_tagged_message(&mut send, stream_io::StreamTag::Close, &close).await?;
 
         let _: SessionCloseAck = stream_io::read_message(&mut recv).await?;
 
@@ -245,32 +302,5 @@ impl ClientSession {
             .close(0u32.into(), b"session close completed");
 
         Ok(())
-    }
-
-    /// Wait for the peer to initiate graceful close and acknowledge it.
-    ///
-    /// Reads `SessionClose` from a new bidirectional stream, writes
-    /// `SessionCloseAck`, and returns. The QUIC connection is closed by the
-    /// initiating side (via `close()`); callers of `accept_close` should not
-    /// rely on this function explicitly closing the connection.
-    pub async fn accept_close(&self) -> Result<SessionClose> {
-        let (mut send, mut recv) = self
-            .connection
-            .inner()
-            .accept_bi()
-            .await
-            .map_err(|e| ClientError::Handshake(format!("accept close stream: {e}")))?;
-
-        let close: SessionClose = stream_io::read_message(&mut recv).await?;
-        stream_io::write_message(&mut send, &SessionCloseAck {}).await?;
-
-        info!(
-            peer = %self.connection.peer_pod_id(),
-            session_id = %self.session_id,
-            reason = ?close.reason(),
-            "session close acknowledged"
-        );
-
-        Ok(close)
     }
 }

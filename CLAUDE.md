@@ -1,6 +1,6 @@
 # OpenPod — Agent Instructions
 
-Read `docs/Manifesto-v0.8.0.md` before making any architectural decisions. It is the single source of truth.
+Read `docs/Manifesto-v0.8.1.md` before making any architectural decisions. It is the single source of truth.
 
 ## Project Overview
 
@@ -22,7 +22,7 @@ openpod/
 │   └── node/                   # NAPI-RS bindings for pod-agent-core → npm `pod-sdk`
 ├── app/                        # Flutter client application (uses pod-client-core via flutter_rust_bridge)
 └── docs/
-    ├── Manifesto-v0.8.0.md     # Root architectural directive
+    ├── Manifesto-v0.8.1.md     # Root architectural directive
     └── archive/                # Previous manifesto versions
 ```
 
@@ -34,6 +34,7 @@ openpod/
 4. **mTLS via TOFU + SAS.** Identity = Ed25519 keypair, PodId = SHA-256 of public key. No CA infrastructure. See Manifesto §2.7.
 5. **Channel C dual-path.** Safety-critical signals (brake/interrupt) are sent on both unreliable datagram AND reliable stream. Receiver deduplicates by signal ID. Never send safety-critical signals on unreliable-only. Audio mute/unmute is NOT on Channel C — it is a Channel A semantic message (§2.13.3) so mute state participates in seq/ack replay on reconnect.
 6. **Channel D datagrams.** Audio frames use QUIC unreliable datagrams with a fixed binary codec (not protobuf). All datagrams carry a 1-byte channel tag prefix (`0x01` = control, `0x02` = audio). Pod is codec-agnostic — encoding/decoding is the endpoint app's responsibility.
+6b. **Stream-type tags.** All post-session-init QUIC bidirectional streams carry a 1-byte stream-type tag prefix (`0x01` = Channel A envelope, `0x02` = session close). The receiver dispatches by tag before decoding the protobuf body. Handshake and session-init streams are untagged. See Manifesto §2.3.
 7. **Atomic media delivery.** Files upload on dedicated per-file QUIC streams (one stream per file, parallel). The Channel A message carries `pending_attachments` count; the SDK buffers it and delivers text + all completed file paths to the Gateway as a single atomic event. The hold is per-message, not per-channel — other text-only messages flow through immediately.
 8. **Multi-client ready.** The agent core must key all state by session ID. No global mutable singletons. Connection acceptance is a loop, not a one-shot.
 9. **Structured logging everywhere.** Use `tracing` crate. All log entries include `session_id` and `pod_id` as structured fields. Default level: `INFO`. Configurable via `POD_LOG` env var.
@@ -104,3 +105,4 @@ openpod/
 - **Session reconnection:** On ungraceful disconnect, preserve session state for 5 minutes. Match reconnecting clients by PodId + session_id. QUIC transport ACKs don't survive connection death — use application-layer `seq_id`/`ack_id` in protobuf wrappers and buffer un-ACK'd messages for replay.
 - **File stream lifecycle:** One QUIC stream per file upload. Don't reuse a persistent stream for multiple files — you'll get head-of-line blocking and need custom framing. QUIC stream creation is free.
 - **Datagram tag prefix:** Every QUIC datagram must carry a 1-byte channel tag (`0x01` or `0x02`). Never send a raw `ControlSignal` or `AudioFrame` without the tag — the receiver demuxes by this byte.
+- **Stream-type tag prefix:** Every post-session-init bidirectional stream must start with a 1-byte stream-type tag. Without it, protobuf3 silently decodes any bytes as any message type (unknown fields skipped, missing fields get defaults), making stream misrouting undetectable. `SessionClose` travels on its own tagged stream (`0x02`), not on Channel A.
