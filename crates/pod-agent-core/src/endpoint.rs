@@ -6,6 +6,10 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use std::collections::{HashMap, VecDeque};
+use std::sync::Mutex;
 
 use pod_proto::identity::{Certificate, Keypair};
 use pod_proto::tls::config::build_server_tls_config;
@@ -29,7 +33,52 @@ pub struct AgentEndpoint {
     // ids are not persistent across process restarts and are not tied to a
     // durable session registry yet.
     next_session_id: AtomicU64,
+    sessions: Arc<Mutex<HashMap<String, Arc<Mutex<StoredSessionState>>>>>,
+    reconnection_window: Duration,
 }
+
+pub(crate) struct StoredSessionState {
+    pub(crate) peer_pod_id: pod_proto::identity::PodId,
+    pub(crate) last_agent_ack_id: u64,
+    pub(crate) last_client_ack_id: u64,
+    pub(crate) next_agent_seq_id: u64,
+    pub(crate) outbound_buffer: VecDeque<wire::ChannelAEnvelope>,
+    pub(crate) expires_at: Instant,
+}
+
+impl StoredSessionState {
+    fn new(peer_pod_id: pod_proto::identity::PodId, now: Instant, reconnection_window: Duration) -> Self {
+        Self {
+            peer_pod_id,
+            last_agent_ack_id: 0,
+            last_client_ack_id: 0,
+            next_agent_seq_id: 1,
+            outbound_buffer: VecDeque::new(),
+            expires_at: now + reconnection_window,
+        }
+    }
+
+    pub(crate) fn prune_acked_messages(&mut self, ack_id: u64) {
+        self.outbound_buffer.retain(|message| message.seq_id > ack_id);
+        self.last_client_ack_id = self.last_client_ack_id.max(ack_id);
+    }
+
+    pub(crate) fn next_outbound_envelope(
+        &mut self,
+        payload: wire::channel_a_envelope::Payload,
+    ) -> wire::ChannelAEnvelope {
+        let envelope = wire::ChannelAEnvelope {
+            seq_id: self.next_agent_seq_id,
+            ack_id: self.last_agent_ack_id,
+            payload: Some(payload),
+        };
+        self.next_agent_seq_id += 1;
+        self.outbound_buffer.push_back(envelope.clone());
+        envelope
+    }
+}
+
+const DEFAULT_RECONNECTION_WINDOW: Duration = Duration::from_secs(5 * 60);
 
 impl AgentEndpoint {
     /// Bind a QUIC server to the given address.
@@ -64,6 +113,8 @@ impl AgentEndpoint {
         Ok(Self {
             endpoint,
             next_session_id: AtomicU64::new(1),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            reconnection_window: DEFAULT_RECONNECTION_WINDOW,
         })
     }
 
@@ -161,28 +212,81 @@ impl AgentEndpoint {
             ));
         }
 
-        if !init.resume_session_id.is_empty() {
-            return Err(AgentError::Handshake(
-                "session resumption is not implemented yet".into(),
-            ));
-        }
+        let now = Instant::now();
+        let (session_id, state) = if init.resume_session_id.is_empty() {
+            let session_id = self.allocate_session_id();
+            let state = Arc::new(Mutex::new(StoredSessionState::new(
+                conn.peer_pod_id().clone(),
+                now,
+                self.reconnection_window,
+            )));
+            self.sessions
+                .lock()
+                .expect("agent session registry poisoned")
+                .insert(session_id.clone(), state.clone());
+            (session_id, state)
+        } else {
+            let registry = self.sessions.lock().expect("agent session registry poisoned");
+            let state = registry
+                .get(&init.resume_session_id)
+                .cloned()
+                .ok_or_else(|| AgentError::Handshake("session resumption requested for unknown session id".into()))?;
+            drop(registry);
 
-        let session_id = self.allocate_session_id();
+            {
+                let mut state_guard = state.lock().expect("agent session state poisoned");
+                if state_guard.peer_pod_id.as_bytes() != conn.peer_pod_id().as_bytes() {
+                    return Err(AgentError::Handshake(
+                        "session resumption PodId does not match original session owner".into(),
+                    ));
+                }
+                if now > state_guard.expires_at {
+                    self.sessions
+                        .lock()
+                        .expect("agent session registry poisoned")
+                        .remove(&init.resume_session_id);
+                    return Err(AgentError::Handshake(
+                        "session resumption window has expired".into(),
+                    ));
+                }
+                state_guard.prune_acked_messages(init.last_ack_id);
+                state_guard.expires_at = now + self.reconnection_window;
+            }
+
+            (init.resume_session_id.clone(), state)
+        };
+
+        let last_ack_id = state
+            .lock()
+            .expect("agent session state poisoned")
+            .last_agent_ack_id;
         let ack = wire::SessionAck {
             session_id: session_id.clone(),
-            last_ack_id: 0,
+            last_ack_id,
         };
 
         stream_io::write_message(&mut send, &ack).await?;
 
+        let session = AgentSession::new(
+            conn,
+            session_id.clone(),
+            state,
+            self.sessions.clone(),
+            self.reconnection_window,
+        );
+
+        if !init.resume_session_id.is_empty() {
+            session.replay_pending_messages().await?;
+        }
+
         info!(
-            peer = %conn.peer_pod_id(),
+            peer = %session.connection().peer_pod_id(),
             session_id = %session_id,
             client_last_ack_id = init.last_ack_id,
             "session established"
         );
 
-        Ok(AgentSession::new(conn, session_id, init.last_ack_id))
+        Ok(session)
     }
 
     fn allocate_session_id(&self) -> String {

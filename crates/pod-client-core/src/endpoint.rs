@@ -15,7 +15,7 @@ use tracing::info;
 
 use crate::connection::PodConnection;
 use crate::error::{ClientError, Result};
-use crate::session::{ClientSession, SessionInitOptions};
+use crate::session::{ClientSession, SessionInitOptions, SessionResumeState};
 use crate::stream_io;
 
 /// SNI server name used in the TLS handshake.
@@ -106,7 +106,21 @@ impl ClientEndpoint {
         options: SessionInitOptions,
     ) -> Result<ClientSession> {
         let conn = self.connect(agent_addr).await?;
-        self.run_session_init(conn, options).await
+        self.run_session_init(conn, options, None).await
+    }
+
+    /// Resume a previous client session on a new QUIC connection.
+    pub async fn resume_session(
+        &self,
+        agent_addr: SocketAddr,
+        resume_state: SessionResumeState,
+    ) -> Result<ClientSession> {
+        let options = SessionInitOptions {
+            resume_session_id: Some(resume_state.session_id().to_string()),
+            last_ack_id: resume_state.last_client_ack_id(),
+        };
+        let conn = self.connect(agent_addr).await?;
+        self.run_session_init(conn, options, Some(resume_state)).await
     }
 
     /// Run the client side of the protocol handshake.
@@ -152,6 +166,7 @@ impl ClientEndpoint {
         &self,
         conn: PodConnection,
         options: SessionInitOptions,
+        resume_state: Option<SessionResumeState>,
     ) -> Result<ClientSession> {
         let (mut send, mut recv) = conn
             .inner()
@@ -174,14 +189,28 @@ impl ClientEndpoint {
             ));
         }
 
+        let session = match resume_state {
+            Some(resume_state) => {
+                let session = ClientSession::from_resume_state(
+                    conn,
+                    ack.session_id,
+                    ack.last_ack_id,
+                    resume_state,
+                );
+                session.prune_and_replay_pending_messages().await?;
+                session
+            }
+            None => ClientSession::new(conn, ack.session_id, ack.last_ack_id),
+        };
+
         info!(
-            peer = %conn.peer_pod_id(),
-            session_id = %ack.session_id,
-            agent_last_ack_id = ack.last_ack_id,
+            peer = %session.connection().peer_pod_id(),
+            session_id = %session.session_id(),
+            agent_last_ack_id = session.agent_last_ack_id(),
             "session established"
         );
 
-        Ok(ClientSession::new(conn, ack.session_id, ack.last_ack_id))
+        Ok(session)
     }
 
     /// Gracefully shut down the endpoint.
