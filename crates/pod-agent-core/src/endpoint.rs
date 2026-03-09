@@ -4,6 +4,7 @@
 //! and accepting incoming connections with mTLS verification.
 
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use pod_proto::identity::{Certificate, Keypair};
@@ -15,11 +16,19 @@ use tracing::info;
 
 use crate::connection::PodConnection;
 use crate::error::{AgentError, Result};
+use crate::session::AgentSession;
 use crate::stream_io;
 
 /// A QUIC server endpoint that accepts incoming Pod connections.
 pub struct AgentEndpoint {
     endpoint: quinn::Endpoint,
+    // Temporary in-memory allocator for runtime session ids.
+    //
+    // This is enough to establish session semantics on top of a live QUIC
+    // connection, but it is not sufficient for manifesto-grade resumption:
+    // ids are not persistent across process restarts and are not tied to a
+    // durable session registry yet.
+    next_session_id: AtomicU64,
 }
 
 impl AgentEndpoint {
@@ -52,10 +61,18 @@ impl AgentEndpoint {
 
         info!(%addr, "agent endpoint bound");
 
-        Ok(Self { endpoint })
+        Ok(Self {
+            endpoint,
+            next_session_id: AtomicU64::new(1),
+        })
     }
 
-    /// Accept the next incoming connection and perform the handshake.
+    /// Accept the next incoming connection and perform only transport-level
+    /// verification plus the protocol handshake.
+    ///
+    /// This is the lower-level primitive beneath `accept_session()`. Most
+    /// production callers should prefer the session-aware API unless they are
+    /// intentionally operating at the raw transport layer for tests or tooling.
     ///
     /// Returns a verified `PodConnection` after:
     /// 1. TLS handshake completes (peer certificate verified by trust store)
@@ -78,6 +95,16 @@ impl AgentEndpoint {
         self.run_handshake(&pod_conn).await?;
 
         Ok(pod_conn)
+    }
+
+    /// Accept the next incoming connection and establish a runtime session.
+    ///
+    /// After the protocol handshake completes, the agent reads `SessionInit`
+    /// from a dedicated bidirectional stream, validates it against the mTLS
+    /// peer identity, assigns a session id, and replies with `SessionAck`.
+    pub async fn accept_session(&self) -> Result<AgentSession> {
+        let conn = self.accept().await?;
+        self.run_session_init(conn).await
     }
 
     /// Run the agent side of the protocol handshake.
@@ -117,6 +144,50 @@ impl AgentEndpoint {
         );
 
         Ok(())
+    }
+
+    async fn run_session_init(&self, conn: PodConnection) -> Result<AgentSession> {
+        let (mut send, mut recv) = conn
+            .inner()
+            .accept_bi()
+            .await
+            .map_err(|e| AgentError::Handshake(format!("accept session stream: {e}")))?;
+
+        let init: wire::SessionInit = stream_io::read_message(&mut recv).await?;
+
+        if init.client_pod_id.as_slice() != conn.peer_pod_id().as_bytes() {
+            return Err(AgentError::Handshake(
+                "session init PodId does not match TLS peer identity".into(),
+            ));
+        }
+
+        if !init.resume_session_id.is_empty() {
+            return Err(AgentError::Handshake(
+                "session resumption is not implemented yet".into(),
+            ));
+        }
+
+        let session_id = self.allocate_session_id();
+        let ack = wire::SessionAck {
+            session_id: session_id.clone(),
+            last_ack_id: 0,
+        };
+
+        stream_io::write_message(&mut send, &ack).await?;
+
+        info!(
+            peer = %conn.peer_pod_id(),
+            session_id = %session_id,
+            client_last_ack_id = init.last_ack_id,
+            "session established"
+        );
+
+        Ok(AgentSession::new(conn, session_id, init.last_ack_id))
+    }
+
+    fn allocate_session_id(&self) -> String {
+        let next = self.next_session_id.fetch_add(1, Ordering::Relaxed);
+        format!("sess-{next}")
     }
 
     /// Returns the local address this endpoint is bound to.

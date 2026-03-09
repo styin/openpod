@@ -6,7 +6,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use pod_proto::identity::{Certificate, Keypair};
+use pod_proto::identity::{Certificate, Keypair, PodId};
 use pod_proto::tls::config::build_client_tls_config;
 use pod_proto::trust::{TrustPolicy, TrustStore};
 use pod_proto::version;
@@ -15,6 +15,7 @@ use tracing::info;
 
 use crate::connection::PodConnection;
 use crate::error::{ClientError, Result};
+use crate::session::{ClientSession, SessionInitOptions};
 use crate::stream_io;
 
 /// SNI server name used in the TLS handshake.
@@ -26,6 +27,7 @@ const SNI_SERVER_NAME: &str = "openpod";
 /// A QUIC client endpoint that connects to Pod agents.
 pub struct ClientEndpoint {
     endpoint: quinn::Endpoint,
+    local_pod_id: PodId,
 }
 
 impl ClientEndpoint {
@@ -57,10 +59,19 @@ impl ClientEndpoint {
             quinn::Endpoint::client(bind_addr).map_err(|e| ClientError::Endpoint(e.to_string()))?;
         endpoint.set_default_client_config(client_config);
 
-        Ok(Self { endpoint })
+        Ok(Self {
+            endpoint,
+            local_pod_id: PodId::from_public_key(&keypair.public_key_bytes()),
+        })
     }
 
-    /// Connect to an agent at the given address and perform the handshake.
+    /// Connect to an agent at the given address and perform only transport-level
+    /// verification plus the protocol handshake.
+    ///
+    /// This is the lower-level primitive beneath `connect_session()`. Most
+    /// production callers should prefer the session-aware API unless they are
+    /// intentionally operating at the raw transport layer for tests, diagnostics,
+    /// or future non-session helpers.
     ///
     /// Returns a verified `PodConnection` after:
     /// 1. TLS handshake completes (agent certificate verified by trust store)
@@ -79,6 +90,23 @@ impl ClientEndpoint {
         self.run_handshake(&pod_conn).await?;
 
         Ok(pod_conn)
+    }
+
+    /// Connect to an agent and establish a runtime session.
+    pub async fn connect_session(&self, agent_addr: SocketAddr) -> Result<ClientSession> {
+        self.connect_session_with_options(agent_addr, SessionInitOptions::default())
+            .await
+    }
+
+    /// Connect to an agent and establish a runtime session with explicit
+    /// session init options.
+    pub async fn connect_session_with_options(
+        &self,
+        agent_addr: SocketAddr,
+        options: SessionInitOptions,
+    ) -> Result<ClientSession> {
+        let conn = self.connect(agent_addr).await?;
+        self.run_session_init(conn, options).await
     }
 
     /// Run the client side of the protocol handshake.
@@ -118,6 +146,42 @@ impl ClientEndpoint {
         );
 
         Ok(())
+    }
+
+    async fn run_session_init(
+        &self,
+        conn: PodConnection,
+        options: SessionInitOptions,
+    ) -> Result<ClientSession> {
+        let (mut send, mut recv) = conn
+            .inner()
+            .open_bi()
+            .await
+            .map_err(|e| ClientError::Handshake(format!("open session stream: {e}")))?;
+
+        let init = wire::SessionInit {
+            client_pod_id: self.local_pod_id.as_bytes().to_vec(),
+            resume_session_id: options.resume_session_id.unwrap_or_default(),
+            last_ack_id: options.last_ack_id,
+        };
+
+        stream_io::write_message(&mut send, &init).await?;
+
+        let ack: wire::SessionAck = stream_io::read_message(&mut recv).await?;
+        if ack.session_id.is_empty() {
+            return Err(ClientError::Handshake(
+                "agent returned an empty session id".into(),
+            ));
+        }
+
+        info!(
+            peer = %conn.peer_pod_id(),
+            session_id = %ack.session_id,
+            agent_last_ack_id = ack.last_ack_id,
+            "session established"
+        );
+
+        Ok(ClientSession::new(conn, ack.session_id, ack.last_ack_id))
     }
 
     /// Gracefully shut down the endpoint.
