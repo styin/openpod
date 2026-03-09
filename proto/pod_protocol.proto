@@ -5,7 +5,7 @@ package pod;
 // =============================================================================
 // OpenPod Wire Protocol v0.1.0
 // Defines the message types for the Quad-Channel Multiplexer.
-// See docs/Manifesto-v0.8.0.md for architectural context.
+// See docs/Manifesto-v0.8.1.md for architectural context.
 //
 // Channel D (Audio) uses a fixed binary codec, NOT protobuf — see pod-proto's
 // datagram module. Only Channels A/B/C are defined here.

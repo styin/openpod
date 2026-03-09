@@ -177,4 +177,4 @@ openpod/
 
 ---
 
-_Read `docs/Manifesto-v0.8.0.md` for the full U2A specification and architectural directive._
+_Read `docs/Manifesto-v0.8.1.md` for the full U2A specification and architectural directive._
