@@ -13,8 +13,10 @@
 pub mod connection;
 pub mod endpoint;
 pub mod error;
+pub mod session;
 pub mod stream_io;
 
 pub use connection::{PodConnection, ReceivedDatagram};
 pub use endpoint::ClientEndpoint;
 pub use error::ClientError;
+pub use session::{ClientSession, InboundStream, SessionInitOptions, SessionResumeState};
