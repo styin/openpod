@@ -19,4 +19,4 @@ pub mod stream_io;
 pub use connection::{PodConnection, ReceivedDatagram};
 pub use endpoint::ClientEndpoint;
 pub use error::ClientError;
-pub use session::{ClientSession, SessionInitOptions, SessionResumeState};
+pub use session::{ClientSession, InboundStream, SessionInitOptions, SessionResumeState};

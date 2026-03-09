@@ -87,7 +87,18 @@ async fn session_establishment_and_client_initiated_close_work() {
     );
 
     let (agent_close_result, client_close_result) = tokio::join!(
-        agent_session.accept_close(),
+        async {
+            let inbound = agent_session.accept_stream().await?;
+            match inbound {
+                pod_agent_core::InboundStream::Close { close, send } => {
+                    agent_session.acknowledge_close(&close, send).await?;
+                    Ok::<_, pod_agent_core::AgentError>(close)
+                }
+                pod_agent_core::InboundStream::Envelope(_) => {
+                    panic!("expected Close stream, got Envelope")
+                }
+            }
+        },
         client_session.close(SessionCloseReason::UserInitiated, "test shutdown")
     );
 
@@ -137,7 +148,18 @@ async fn agent_initiated_close_is_acknowledged_by_client() {
 
     let (agent_close_result, client_close_result) = tokio::join!(
         agent_session.close(SessionCloseReason::AgentShutdown, "agent stopping"),
-        client_session.accept_close()
+        async {
+            let inbound = client_session.accept_stream().await?;
+            match inbound {
+                pod_client_core::InboundStream::Close { close, send } => {
+                    client_session.acknowledge_close(&close, send).await?;
+                    Ok::<_, pod_client_core::ClientError>(close)
+                }
+                pod_client_core::InboundStream::Envelope(_) => {
+                    panic!("expected Close stream, got Envelope")
+                }
+            }
+        }
     );
 
     agent_close_result.expect("agent close should complete");
@@ -212,10 +234,14 @@ async fn session_resumption_replays_unacked_agent_messages() {
     let resumed_agent_session = agent_result.expect("agent should resume session");
     let resumed_client_session = client_result.expect("client should resume session");
 
-    let replayed = resumed_client_session
-        .accept_envelope()
+    let inbound = resumed_client_session
+        .accept_stream()
         .await
-        .expect("client should receive replayed envelope");
+        .expect("client should receive replayed stream");
+    let replayed = match inbound {
+        pod_client_core::InboundStream::Envelope(env) => env,
+        _ => panic!("expected Envelope stream"),
+    };
 
     assert_eq!(replayed.seq_id, 1);
     assert_eq!(replayed.ack_id, 0);
@@ -293,10 +319,14 @@ async fn session_resumption_replays_unacked_client_messages() {
     let resumed_agent_session = agent_result.expect("agent should resume session");
     let resumed_client_session = client_result.expect("client should resume session");
 
-    let replayed = resumed_agent_session
-        .accept_envelope()
+    let inbound = resumed_agent_session
+        .accept_stream()
         .await
-        .expect("agent should receive replayed envelope");
+        .expect("agent should receive replayed stream");
+    let replayed = match inbound {
+        pod_agent_core::InboundStream::Envelope(env) => env,
+        _ => panic!("expected Envelope stream"),
+    };
 
     assert_eq!(replayed.seq_id, 1);
     assert_eq!(replayed.ack_id, 0);
@@ -393,7 +423,18 @@ async fn graceful_close_removes_session_from_resume_cache() {
     let resume_state = client_session.resume_state();
 
     let (agent_close_result, client_close_result) = tokio::join!(
-        agent_session.accept_close(),
+        async {
+            let inbound = agent_session.accept_stream().await?;
+            match inbound {
+                pod_agent_core::InboundStream::Close { close, send } => {
+                    agent_session.acknowledge_close(&close, send).await?;
+                    Ok::<_, pod_agent_core::AgentError>(())
+                }
+                pod_agent_core::InboundStream::Envelope(_) => {
+                    panic!("expected Close stream, got Envelope")
+                }
+            }
+        },
         client_session.close(SessionCloseReason::UserInitiated, "test shutdown")
     );
 
@@ -591,10 +632,13 @@ async fn large_channel_a_envelope_delivered_in_both_directions() {
     // Agent → Client: 8 MiB payload.
     let (agent_send_result, client_recv_result) = tokio::join!(
         agent_session.send_envelope(large_semantic_payload(PAYLOAD_SIZE)),
-        client_session.accept_envelope()
+        client_session.accept_stream()
     );
     let sent = agent_send_result.expect("agent should send large envelope");
-    let received = client_recv_result.expect("client should receive large envelope");
+    let received = match client_recv_result.expect("client should receive stream") {
+        pod_client_core::InboundStream::Envelope(env) => env,
+        _ => panic!("expected Envelope stream"),
+    };
     assert_eq!(sent.seq_id, received.seq_id);
     match received.payload {
         Some(Payload::Semantic(msg)) => assert_eq!(msg.json_payload.len(), PAYLOAD_SIZE),
@@ -604,10 +648,13 @@ async fn large_channel_a_envelope_delivered_in_both_directions() {
     // Client → Agent: 8 MiB payload.
     let (client_send_result, agent_recv_result) = tokio::join!(
         client_session.send_envelope(large_semantic_payload(PAYLOAD_SIZE)),
-        agent_session.accept_envelope()
+        agent_session.accept_stream()
     );
     let sent = client_send_result.expect("client should send large envelope");
-    let received = agent_recv_result.expect("agent should receive large envelope");
+    let received = match agent_recv_result.expect("agent should receive stream") {
+        pod_agent_core::InboundStream::Envelope(env) => env,
+        _ => panic!("expected Envelope stream"),
+    };
     assert_eq!(sent.seq_id, received.seq_id);
     match received.payload {
         Some(Payload::Semantic(msg)) => assert_eq!(msg.json_payload.len(), PAYLOAD_SIZE),
