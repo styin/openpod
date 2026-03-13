@@ -24,7 +24,7 @@ ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8"] }
 sha2 = "0.10"
 hmac = "0.12"
 data-encoding = "2"
-rcgen = { version = "0.13", features = ["pem"] }
+rcgen = { version = "0.14", features = ["pem"] }
 rustls-pki-types = "1"
 time = "0.3"
 rand = "0.8"
